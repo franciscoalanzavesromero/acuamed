@@ -1,0 +1,114 @@
+# INSTRUCCIONES PARA ARRANCAR ACUAMED
+
+## Requisitos previos
+
+1. LM Studio instalado y ejecutándose
+2. Modelo 'ministral-3-8b-instruct-2512' cargado en LM Studio
+3. Docker y Docker Compose instalados
+4. Puerto 1234 disponible (LM Studio)
+
+## Arranque automático (recomendado)
+
+Ejecutar desde el directorio del proyecto:
+
+```bash
+cd ~/ACUAMED
+./start.sh
+```
+
+El script realiza automáticamente:
+1. Verifica que LM Studio esté corriendo en localhost:1234
+2. Inicia el proxy socat en puerto 11234
+3. Verifica la conexión al proxy
+4. Levanta todos los contenedores Docker
+
+## Arranque manual
+
+1. Iniciar LM Studio y cargar el modelo 'ministral-3-8b-instruct-2512'
+
+2. Iniciar el proxy socat:
+```bash
+./start_lmstudio_proxy.sh
+```
+o manualmente:
+```bash
+socat TCP-LISTEN:11234,reuseaddr,fork TCP:127.0.0.1:1234 &
+```
+
+3. Iniciar los contenedores Docker:
+```bash
+docker compose up -d --build
+```
+
+4. Verificar el estado:
+```bash
+docker compose ps
+```
+
+## URLs de acceso
+
+- Frontend:      http://localhost:3000
+- Backend API:   http://localhost:8000
+- Documentación: http://localhost:8000/docs
+
+## Solución de problemas
+
+### Error: "El modelo de IA no está cargado en LM Studio"
+1. Verificar que LM Studio esté ejecutándose
+2. Verificar que el proxy esté activo:
+   ```bash
+   pgrep -f "socat.*11234"
+   ```
+3. Verificar conexión desde el backend:
+   ```bash
+   curl http://localhost:8000/api/v1/models/status
+   ```
+4. Reiniciar los contenedores:
+   ```bash
+   docker compose restart backend celery_worker
+   ```
+
+### El proxy no inicia
+Verificar que el puerto 11234 no esté en uso:
+```bash
+ss -tlnp | grep 11234
+```
+Matálo si es necesario:
+```bash
+pkill -f "socat.*11234"
+```
+
+### Contenedores no se conectan
+Recrear los contenedores:
+```bash
+docker compose up -d --force-recreate backend celery_worker
+```
+
+## Comandos útiles
+
+Ver logs del backend:
+```bash
+docker compose logs -f backend
+```
+
+Ver logs del celery worker:
+```bash
+docker compose logs -f celery_worker
+```
+
+Verificar conexión LM Studio:
+```bash
+curl http://localhost:1234/v1/models
+```
+
+Reiniciar todo:
+```bash
+docker compose down && ./start.sh
+```
+
+## Notas
+
+- El proxy socat es necesario porque los contenedores Docker no pueden acceder directamente a localhost del host
+- LM Studio debe estar ejecutándose antes de iniciar los contenedores
+- Los datos de PostgreSQL se persisten en el volumen 'postgres_data'
+- El proxy escucha en 0.0.0.0:11234 y redirige a localhost:1234 (LM Studio)
