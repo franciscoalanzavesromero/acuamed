@@ -29,20 +29,53 @@ export default function Dashboard() {
       if (response.ok) {
         const data = await response.json()
         if (data.period_summary) {
-          const volumeData = data.period_summary.slice(0, 12).map((item: any) => ({
-            name: new Date(item.period_start).toLocaleDateString('es-ES', { month: 'short' }),
-            volume: item.total_volume_m3 / 1000000
-          }))
+          // Agrupar datos por mes
+          const monthlyData: { [key: string]: { volume: number; count: number } } = {}
+          
+          data.period_summary.forEach((item: any) => {
+            const date = new Date(item.period_start)
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+            const monthName = date.toLocaleDateString('es-ES', { month: 'short' })
+            
+            if (!monthlyData[monthKey]) {
+              monthlyData[monthKey] = { volume: 0, count: 0 }
+            }
+            monthlyData[monthKey].volume += item.total_volume_m3
+            monthlyData[monthKey].count += item.record_count
+          })
+          
+          // Convertir a array y ordenar por fecha
+          const volumeData = Object.entries(monthlyData)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .slice(0, 12)
+            .map(([key, data]) => {
+              const [year, month] = key.split('-')
+              const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+              return {
+                name: date.toLocaleDateString('es-ES', { month: 'short' }),
+                volume: data.volume / 1000000
+              }
+            })
+          
+          // Calcular distribución por mes para el gráfico de torta
+          const distributionData = Object.entries(monthlyData)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .slice(0, 5)
+            .map(([key, data]) => {
+              const [year, month] = key.split('-')
+              const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+              const monthName = date.toLocaleDateString('es-ES', { month: 'long' })
+              return {
+                name: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+                value: Math.abs(data.volume)
+              }
+            })
           
           setChartData({
             volume: volumeData,
             trend: volumeData,
-            distribution: [
-              { name: 'Enero', value: 25 },
-              { name: 'Febrero', value: 20 },
-              { name: 'Marzo', value: 22 },
-              { name: 'Abril', value: 18 },
-              { name: 'Mayo', value: 15 }
+            distribution: distributionData.length > 0 ? distributionData : [
+              { name: 'Sin datos', value: 1 }
             ]
           })
           

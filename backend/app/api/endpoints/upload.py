@@ -89,6 +89,10 @@ async def process_file_background(upload_id: str, file_path: str):
                 if "sensores" in result and result["sensores"] is not None:
                     consumptions_data.extend(result["sensores"].get("data", []))
                 
+                # Cachear ubicaciones para búsqueda rápida
+                locations_result = await session.execute(select(Location))
+                locations_cache = {loc.name.lower(): loc.id for loc in locations_result.scalars().all()}
+                
                 if consumptions_data:
                     for cons_data in consumptions_data:
                         # Soporte de nombres originales del Excel Y nombres renombrados por CostesExplotacionCleaner
@@ -114,6 +118,27 @@ async def process_file_background(upload_id: str, file_path: str):
                             "volume_m3",
                             cons_data.get("REAL", cons_data.get("real", cons_data.get("value", None)))
                         )
+                        
+                        # Buscar location_id por sist_explot o location_code
+                        location_id = None
+                        sist_explot = cons_data.get("sist_explot", cons_data.get("SIST_EXPLOT"))
+                        location_code = cons_data.get("location_code", cons_data.get("nav_dim1_id"))
+                        
+                        # Primero intentar por nombre del sistema de explotación
+                        if sist_explot:
+                            sist_lower = str(sist_explot).lower()
+                            for loc_name, loc_id in locations_cache.items():
+                                if sist_lower in loc_name or loc_name in sist_lower:
+                                    location_id = loc_id
+                                    break
+                        
+                        # Si no encontró, intentar por location_code
+                        if not location_id and location_code:
+                            code_str = str(location_code).upper()
+                            for loc_name, loc_id in locations_cache.items():
+                                if code_str in loc_name.upper():
+                                    location_id = loc_id
+                                    break
 
                         if real_value is not None and str(real_value) not in ('nan', 'None', ''):
                             try:
@@ -122,6 +147,7 @@ async def process_file_background(upload_id: str, file_path: str):
                                 continue
                             consumption = Consumption(
                                 file_upload_id=uuid.UUID(upload_id),
+                                location_id=location_id,
                                 period_start=datetime(year, mes, 1),
                                 period_end=datetime(year, mes, 28),
                                 volume_m3=volume,

@@ -148,21 +148,32 @@ class AnalyticsChain:
         question: str,
         session: AsyncSession
     ) -> Dict[str, Any]:
+        import re
+        from sqlalchemy import text
+        
         schema = await self.sql_generator.get_schema_description(session)
         
         sql_query = await self.sql_generator.generate_sql(question, schema)
         
+        # Limpiar formato markdown de la consulta SQL
+        clean_sql = sql_query
+        if "```" in sql_query:
+            # Extraer SQL de bloques de código markdown
+            match = re.search(r'```(?:sql)?\s*(.*?)```', sql_query, re.DOTALL | re.IGNORECASE)
+            if match:
+                clean_sql = match.group(1).strip()
+        
         result_data = []
         try:
-            if "SELECT" in sql_query.upper():
-                result = await session.execute(sql_query)
+            if "SELECT" in clean_sql.upper():
+                result = await session.execute(text(clean_sql))
                 rows = result.fetchall()
                 columns = result.keys()
                 result_data = [dict(zip(columns, row)) for row in rows]
         except Exception as e:
             return {
                 "question": question,
-                "sql_generated": sql_query,
+                "sql_generated": clean_sql,
                 "error": f"Error al ejecutar consulta: {str(e)}",
                 "result": None,
                 "explanation": None
