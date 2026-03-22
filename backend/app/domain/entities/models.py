@@ -56,6 +56,9 @@ class FileUpload(Base):
     records: Mapped[List["WaterRecord"]] = relationship(
         "WaterRecord", back_populates="file_upload", cascade="all, delete-orphan"
     )
+    consumptions: Mapped[List["Consumption"]] = relationship(
+        "Consumption", back_populates="file_upload", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (Index("idx_file_uploads_status", "status"),)
 
@@ -192,6 +195,10 @@ class Consumption(Base):
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+    file_upload: Mapped["FileUpload"] = relationship(
+        "FileUpload", back_populates="consumptions"
     )
 
     __table_args__ = (
