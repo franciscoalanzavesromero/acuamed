@@ -2,15 +2,21 @@
 
 ## DATOS DISPONIBLES
 
+### Origen de datos: Costes_Explotacion.xls
+El archivo Excel contiene 3 hojas:
+- **GesMed**: 42,095 registros de consumo detallado
+- **Ubicaciones**: 40 sistemas de desalación con coordenadas
+- **Volumenes**: 121 volúmenes por subactuación
+
 ### Tablas con datos reales:
 1. **consumptions** (42,221 registros) - Datos de consumo de agua
 2. **locations** (9 registros) - Sistemas de desalación
 3. **file_uploads** (1 registro) - Historial de cargas
 
 ### Tablas vacías (sin datos):
-- sensors (0 registros)
-- water_records (0 registros)
-- anomaly_records (0 registros)
+- sensors (0 registros) - No hay datos en el Excel
+- water_records (0 registros) - No hay datos en el Excel
+- anomaly_records (0 registros) - No hay datos en el Excel
 
 ### Ubicaciones disponibles:
 - Sistema Dalías (D)
@@ -31,6 +37,13 @@
 - subscriber_code (código de subscriber)
 - is_estimated (si es estimado)
 - raw_data (datos originales del Excel en JSON)
+
+### Datos adicionales en raw_data (del Excel):
+- NAV_DIM1_ID: Código del sistema
+- SIST_EXPLOT: Nombre del sistema de explotación
+- ZONA, ZONA_COD: Información de zona
+- Year, MES, MES_NOMBRE: Periodo temporal
+- SUBACTUACION: Tipo de explotación detallado
 
 ---
 
@@ -74,22 +87,28 @@
 
 ## QUÉ NO PUEDE RESPONDER LA IA
 
-### Sensores y mediciones
+### Sensores y mediciones (NO ESTÁN EN EL EXCEL)
 - "¿Qué sensores hay instalados?"
 - "Lecturas de caudalímetros"
 - "Datos de presión o temperatura"
 - "Calidad del agua"
 
-### Anomalías detectadas
+**Razón**: El archivo Excel no contiene datos de sensores. Solo tiene consumos calculados.
+
+### Anomalías detectadas (NO ESTÁN EN EL EXCEL)
 - "¿Hay fugas detectadas?"
 - "Anomalías en el consumo"
 - "Valores atípicos"
 - "Alertas de calidad"
 
+**Razón**: El Excel no tiene datos de anomalías. Solo consumos registrados.
+
 ### Datos geográficos detallados
 - "Coordenadas de las instalaciones"
 - "Mapa de ubicaciones"
 - "Distancias entre sistemas"
+
+**Razón**: Las coordenadas están en el Excel pero no se están guardando en la BD actualmente.
 
 ### Historial de archivos
 - "¿Qué archivos se han subido?"
