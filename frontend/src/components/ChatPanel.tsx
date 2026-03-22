@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, MessageSquare, User, Trash2, Maximize2, Minimize2, Loader2, Clock } from 'lucide-react'
+import { Send, MessageSquare, User, Trash2, Maximize2, Minimize2, Loader2, Clock, AlertTriangle, TrendingUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -21,21 +21,41 @@ interface ChatPanelProps {
   onAddChartToDashboard?: (chart: Omit<ChartConfig, 'id' | 'createdAt'>) => void
 }
 
+const STORAGE_KEY = 'acuamed_chat_history'
+const MAX_STORED_MESSAGES = 50
+
 export default function ChatPanel({ onAddChartToDashboard }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'ai',
-      content: '¡Hola! Soy el asistente de ACUAMED. Puedo ayudarte a analizar tus datos hídricos. Pregúntame sobre consumos, anomalías o tendencias. También puedo generar gráficas interactivas para visualizar los datos.',
-      timestamp: new Date()
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // Load chat history from localStorage
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        return parsed.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }))
+      }
+    } catch (e) {
+      console.error('Error loading chat history:', e)
     }
-  ])
+    
+    return [
+      {
+        id: '1',
+        role: 'ai',
+        content: '¡Hola! Soy el asistente de ACUAMED. Puedo ayudarte a analizar tus datos hídricos. Pregúntame sobre consumos, anomalías o tendencias. También puedo generar gráficas interactivas para visualizar los datos.',
+        timestamp: new Date()
+      }
+    ]
+  })
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [loadingStage, setLoadingStage] = useState<string>('')
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [addingChartId, setAddingChartId] = useState<string | null>(null)
+  const [anomalyAlerts, setAnomalyAlerts] = useState<any[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const loadingInterval = useRef<NodeJS.Timeout | null>(null)
 
@@ -47,15 +67,45 @@ export default function ChatPanel({ onAddChartToDashboard }: ChatPanelProps) {
     scrollToBottom()
   }, [messages])
 
+  // Save chat history to localStorage
+  useEffect(() => {
+    try {
+      const messagesToSave = messages.slice(-MAX_STORED_MESSAGES).map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp.toISOString()
+      }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesToSave))
+    } catch (e) {
+      console.error('Error saving chat history:', e)
+    }
+  }, [messages])
+
+  // Check for anomalies on mount
+  useEffect(() => {
+    const checkAnomalies = async () => {
+      try {
+        const result = await api.detectAnomalies(2.5)
+        if (result.anomalies && result.anomalies.length > 0) {
+          setAnomalyAlerts(result.anomalies.slice(0, 3))
+        }
+      } catch (e) {
+        // Silently fail - anomaly check is not critical
+      }
+    }
+    checkAnomalies()
+  }, [])
+
   const handleClearChat = () => {
-    setMessages([
+    const newMessages = [
       {
         id: Date.now().toString(),
-        role: 'ai',
+        role: 'ai' as const,
         content: 'Chat borrado. ¿En qué puedo ayudarte ahora?',
         timestamp: new Date()
       }
-    ])
+    ]
+    setMessages(newMessages)
+    localStorage.removeItem(STORAGE_KEY)
   }
 
   const toggleFullscreen = () => {
@@ -174,7 +224,10 @@ export default function ChatPanel({ onAddChartToDashboard }: ChatPanelProps) {
     '¿Hay anomalías en los datos?',
     'Resumen del último mes',
     'Top 5 ubicaciones por consumo',
-    'Mostrar tendencia de consumo'
+    'Mostrar tendencia de consumo',
+    'Comparar consumo por región',
+    'Anomalías en sensores de turbidez',
+    'Consumo mensual del último año'
   ]
 
   return (
@@ -203,6 +256,26 @@ export default function ChatPanel({ onAddChartToDashboard }: ChatPanelProps) {
       </div>
 
       <div className="chat-messages">
+        {anomalyAlerts.length > 0 && (
+          <div className="anomaly-alerts mb-3 p-2 bg-warning bg-opacity-10 border border-warning rounded">
+            <div className="d-flex align-items-center gap-2 mb-2">
+              <AlertTriangle size={16} className="text-warning" />
+              <span className="fw-bold small">Alertas de Anomalías</span>
+            </div>
+            {anomalyAlerts.map((alert, i) => (
+              <div key={i} className="small text-muted mb-1">
+                • {alert.location_id}: {alert.volume_m3?.toLocaleString('es-ES')} m³ 
+                (Z-Score: {alert.z_score?.toFixed(2)})
+              </div>
+            ))}
+            <button 
+              className="btn btn-sm btn-outline-warning mt-2"
+              onClick={() => setInput('¿Cuáles son las anomalías detectadas?')}
+            >
+              Ver detalles
+            </button>
+          </div>
+        )}
         {messages.map(msg => (
           <div key={msg.id} className={`message ${msg.role}`}>
             <div className="d-flex align-items-start gap-2">

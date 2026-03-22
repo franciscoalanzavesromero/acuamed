@@ -30,6 +30,9 @@ class LLMChatResponse(BaseModel):
 
 
 class LLMService:
+    MAX_RETRIES = 3
+    RETRY_DELAY_SECONDS = 2
+
     def __init__(self):
         url = settings.lm_studio_url.rstrip("/")
         # Eliminar /v1 si existe al final
@@ -70,29 +73,45 @@ class LLMService:
         temperature: float = 0.3,
         max_tokens: int = 2048
     ) -> Dict[str, Any]:
+        import asyncio
+        
         logger.info(f"Enviando chat a: {self.chat_url}")
         logger.debug(f"Messages: {messages}")
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            payload = {
-                "model": "ministral-3-8b-instruct-2512",
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": False
-            }
+        
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
             try:
-                response = await client.post(self.chat_url, json=payload)
-                logger.info(f"Respuesta de chat: status {response.status_code}")
-                response.raise_for_status()
-                response_data = response.json()
-                logger.info(f"Respuesta de LM Studio: {json.dumps(response_data, indent=2) if isinstance(response_data, dict) else str(response_data)}")
-                return response_data
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    payload = {
+                        "model": "ministral-3-8b-instruct-2512",
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                        "stream": False
+                    }
+                    response = await client.post(self.chat_url, json=payload)
+                    logger.info(f"Respuesta de chat (intento {attempt + 1}): status {response.status_code}")
+                    response.raise_for_status()
+                    response_data = response.json()
+                    logger.info(f"Respuesta de LM Studio: {json.dumps(response_data, indent=2) if isinstance(response_data, dict) else str(response_data)}")
+                    return response_data
+            except httpx.TimeoutException as e:
+                last_error = f"Timeout después de {self.timeout}s. Intento {attempt + 1}/{self.MAX_RETRIES}"
+                logger.warning(last_error)
+                if attempt < self.MAX_RETRIES - 1:
+                    await asyncio.sleep(self.RETRY_DELAY_SECONDS * (attempt + 1))
             except httpx.HTTPStatusError as e:
-                logger.error(f"Error HTTP en chat: {e.response.status_code} - {e.response.text}")
-                return {"error": f"Error HTTP: {e.response.status_code}", "detail": e.response.text}
+                last_error = f"Error HTTP {e.response.status_code}: {e.response.text}"
+                logger.error(last_error)
+                if attempt < self.MAX_RETRIES - 1:
+                    await asyncio.sleep(self.RETRY_DELAY_SECONDS * (attempt + 1))
             except Exception as e:
-                logger.error(f"Error en chat: {str(e)}")
-                return {"error": str(e)}
+                last_error = f"Error inesperado: {str(e)}"
+                logger.error(last_error)
+                if attempt < self.MAX_RETRIES - 1:
+                    await asyncio.sleep(self.RETRY_DELAY_SECONDS * (attempt + 1))
+        
+        return {"error": f"Falló después de {self.MAX_RETRIES} intentos. Último error: {last_error}"}
 
     async def generate(
         self,

@@ -152,3 +152,99 @@ async def get_database_schema(db: AsyncSession = Depends(get_db)):
     schema = await sql_gen.get_schema_description(db)
     
     return {"schema": schema}
+
+
+@router.get("/aggregations/daily")
+async def get_daily_aggregations(
+    days: int = 30,
+    location_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Obtiene agregaciones diarias pre-calculadas para respuestas más rápidas"""
+    from sqlalchemy import text
+    
+    query = """
+        SELECT 
+            DATE(c.period_start) as date,
+            l.region,
+            SUM(c.volume_m3) as total_volume,
+            COUNT(*) as record_count
+        FROM consumptions c
+        JOIN locations l ON c.location_id = l.id
+        WHERE c.period_start >= CURRENT_DATE - INTERVAL ':days days'
+    """
+    
+    params: dict = {"days": days}
+    
+    if location_id:
+        query += " AND c.location_id = :location_id"
+        params["location_id"] = location_id
+    
+    query += """
+        GROUP BY DATE(c.period_start), l.region
+        ORDER BY date DESC, l.region
+    """
+    
+    try:
+        result = await db.execute(text(query), params)
+        rows = result.fetchall()
+        columns = result.keys()
+        return {
+            "aggregations": [dict(zip(columns, row)) for row in rows],
+            "period_days": days,
+            "count": len(rows)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener agregaciones diarias: {str(e)}"
+        )
+
+
+@router.get("/aggregations/monthly")
+async def get_monthly_aggregations(
+    months: int = 12,
+    location_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Obtiene agregaciones mensuales pre-calculadas para respuestas más rápidas"""
+    from sqlalchemy import text
+    
+    query = """
+        SELECT 
+            EXTRACT(YEAR FROM c.period_start) as year,
+            EXTRACT(MONTH FROM c.period_start) as month,
+            l.region,
+            SUM(c.volume_m3) as total_volume,
+            AVG(c.volume_m3) as avg_volume,
+            COUNT(*) as record_count
+        FROM consumptions c
+        JOIN locations l ON c.location_id = l.id
+        WHERE c.period_start >= CURRENT_DATE - INTERVAL ':months months'
+    """
+    
+    params: dict = {"months": months}
+    
+    if location_id:
+        query += " AND c.location_id = :location_id"
+        params["location_id"] = location_id
+    
+    query += """
+        GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start), l.region
+        ORDER BY year DESC, month DESC, l.region
+    """
+    
+    try:
+        result = await db.execute(text(query), params)
+        rows = result.fetchall()
+        columns = result.keys()
+        return {
+            "aggregations": [dict(zip(columns, row)) for row in rows],
+            "period_months": months,
+            "count": len(rows)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener agregaciones mensuales: {str(e)}"
+        )

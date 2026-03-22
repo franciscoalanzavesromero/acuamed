@@ -207,3 +207,70 @@ async def run_preset_simulation(
             status_code=500,
             detail=f"Error en simulación: {str(e)}"
         )
+
+
+@router.get("/comparisons/period")
+async def get_period_comparisons(
+    periods: int = Query(default=2, ge=2, le=4),
+    db: AsyncSession = Depends(get_db)
+):
+    """Obtiene comparativas automáticas entre períodos"""
+    from sqlalchemy import text
+    
+    try:
+        query = """
+            WITH period_data AS (
+                SELECT 
+                    EXTRACT(YEAR FROM c.period_start) as year,
+                    EXTRACT(MONTH FROM c.period_start) as month,
+                    l.region,
+                    SUM(c.volume_m3) as total_volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY EXTRACT(MONTH FROM c.period_start), l.region 
+                        ORDER BY EXTRACT(YEAR FROM c.period_start) DESC
+                    ) as period_rank
+                FROM consumptions c
+                JOIN locations l ON c.location_id = l.id
+                WHERE c.period_start >= CURRENT_DATE - INTERVAL ':periods years'
+                GROUP BY 
+                    EXTRACT(YEAR FROM c.period_start),
+                    EXTRACT(MONTH FROM c.period_start),
+                    l.region
+            )
+            SELECT 
+                year,
+                month,
+                region,
+                total_volume,
+                LAG(total_volume) OVER (
+                    PARTITION BY month, region 
+                    ORDER BY year
+                ) as prev_year_volume,
+                CASE 
+                    WHEN LAG(total_volume) OVER (PARTITION BY month, region ORDER BY year) > 0 
+                    THEN ROUND(
+                        ((total_volume - LAG(total_volume) OVER (PARTITION BY month, region ORDER BY year)) / 
+                        LAG(total_volume) OVER (PARTITION BY month, region ORDER BY year) * 100)::numeric, 
+                        2
+                    )
+                    ELSE NULL 
+                END as variation_percent
+            FROM period_data
+            WHERE period_rank <= :periods
+            ORDER BY year DESC, month DESC, region
+        """
+        
+        result = await db.execute(text(query), {"periods": periods})
+        rows = result.fetchall()
+        columns = result.keys()
+        
+        return {
+            "comparisons": [dict(zip(columns, row)) for row in rows],
+            "periods_compared": periods,
+            "count": len(rows)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener comparativas: {str(e)}"
+        )

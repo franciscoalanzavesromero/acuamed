@@ -1,12 +1,13 @@
 import React, { useState, useCallback, memo } from 'react'
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  AreaChart, Area, ComposedChart,
+  AreaChart, Area, ComposedChart, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer
+  ResponsiveContainer, ZAxis
 } from 'recharts'
-import { Trash2, GripVertical, RefreshCw, Maximize2, MoreVertical, Edit2, Check, X } from 'lucide-react'
+import { Trash2, GripVertical, RefreshCw, Maximize2, MoreVertical, Edit2, Check, X, Download, FileImage, FileText } from 'lucide-react'
 import { ChartConfig, ChartSize, DEFAULT_COLORS } from '../types/charts'
+import { exportChartToPNG, exportChartToPDF } from '../services/chartExport'
 
 interface ChartWidgetProps {
   chart: ChartConfig
@@ -40,6 +41,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = memo(({
   const [showMenu, setShowMenu] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   const handleTitleSubmit = useCallback(() => {
     if (editedTitle.trim() && editedTitle !== chart.title) {
@@ -69,6 +71,32 @@ const ChartWidget: React.FC<ChartWidgetProps> = memo(({
       onDelete()
     }, 200)
   }, [onDelete])
+
+  const handleExportPNG = useCallback(async () => {
+    setIsExporting(true)
+    setShowMenu(false)
+    try {
+      const chartId = `chart-${chart.id}`
+      await exportChartToPNG(chartId, `${chart.title.replace(/\s+/g, '_')}.png`)
+    } catch (error) {
+      console.error('Error exporting PNG:', error)
+    } finally {
+      setIsExporting(false)
+    }
+  }, [chart.id, chart.title])
+
+  const handleExportPDF = useCallback(async () => {
+    setIsExporting(true)
+    setShowMenu(false)
+    try {
+      const chartId = `chart-${chart.id}`
+      await exportChartToPDF(chartId, `${chart.title.replace(/\s+/g, '_')}.pdf`)
+    } catch (error) {
+      console.error('Error exporting PDF:', error)
+    } finally {
+      setIsExporting(false)
+    }
+  }, [chart.id, chart.title])
 
   const renderChart = () => {
     if (!chart.data || chart.data.length === 0) {
@@ -207,6 +235,69 @@ const ChartWidget: React.FC<ChartWidgetProps> = memo(({
           </ResponsiveContainer>
         )
 
+      case 'scatter':
+        return (
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
+              <XAxis dataKey={chart.xAxisKey || 'x'} tick={axisStyle} name="X" />
+              <YAxis dataKey={chart.dataKeys[0] || 'y'} tick={axisStyle} name="Y" />
+              <ZAxis range={[50]} />
+              <Tooltip contentStyle={tooltipStyle} />
+              {chart.dataKeys.length > 1 && <Legend />}
+              {chart.dataKeys.map((key, index) => (
+                <Scatter
+                  key={key}
+                  name={key}
+                  data={chart.data}
+                  fill={chart.colors?.[index] || DEFAULT_COLORS[index % DEFAULT_COLORS.length]}
+                />
+              ))}
+            </ScatterChart>
+          </ResponsiveContainer>
+        )
+
+      case 'heatmap':
+        // Heatmap rendered as a grid with color intensity
+        return (
+          <div className="heatmap-container h-100">
+            <div className="heatmap-grid" style={{ 
+              display: 'grid', 
+              gridTemplateColumns: `repeat(${Math.min(chart.data.length, 5)}, 1fr)`,
+              gap: '4px',
+              height: '100%',
+              padding: '10px'
+            }}>
+              {chart.data.map((item, index) => {
+                const value = item[chart.dataKeys[0]] as number || 0
+                const maxValue = Math.max(...chart.data.map(d => (d[chart.dataKeys[0]] as number) || 0))
+                const intensity = maxValue > 0 ? value / maxValue : 0
+                const hue = 200 - (intensity * 200) // Blue to Red
+                
+                return (
+                  <div
+                    key={index}
+                    className="heatmap-cell"
+                    style={{
+                      backgroundColor: `hsl(${hue}, 70%, ${50 + (1 - intensity) * 30}%)`,
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '12px',
+                      color: intensity > 0.5 ? '#fff' : '#333',
+                      fontWeight: 500
+                    }}
+                    title={`${item.name || index}: ${value.toLocaleString('es-ES')}`}
+                  >
+                    {typeof value === 'number' ? value.toLocaleString('es-ES', { maximumFractionDigits: 0 }) : value}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+
       case 'table':
         return (
           <div className="table-responsive h-100">
@@ -246,6 +337,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = memo(({
 
   return (
     <div
+      id={`chart-${chart.id}`}
       className={`chart-widget ${isSelected ? 'selected' : ''} ${isDeleting ? 'deleting' : ''}`}
       style={{ height: SIZE_HEIGHTS[chart.size] }}
       onClick={onSelect}
@@ -321,6 +413,24 @@ const ChartWidget: React.FC<ChartWidgetProps> = memo(({
                       <Edit2 size={14} className="me-2" />
                       Editar título
                     </button>
+                    <div className="dropdown-divider" />
+                    <button
+                      className="dropdown-item"
+                      onClick={e => { e.stopPropagation(); handleExportPNG(); }}
+                      disabled={isExporting}
+                    >
+                      <FileImage size={14} className="me-2" />
+                      Exportar PNG
+                    </button>
+                    <button
+                      className="dropdown-item"
+                      onClick={e => { e.stopPropagation(); handleExportPDF(); }}
+                      disabled={isExporting}
+                    >
+                      <FileText size={14} className="me-2" />
+                      Exportar PDF
+                    </button>
+                    <div className="dropdown-divider" />
                     <button
                       className="dropdown-item"
                       onClick={e => { e.stopPropagation(); onResize?.('small'); setShowMenu(false); }}

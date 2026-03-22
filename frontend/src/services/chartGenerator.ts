@@ -16,7 +16,9 @@ const CHART_INDICATORS: Record<ChartType, string[]> = {
   pie: ['porcentaje', 'distribución', 'proporción', 'parte', 'segmento'],
   area: ['acumulación', 'acumulado', 'volumen total', 'cumulative'],
   composed: ['múltiple', 'combinado', 'varios', 'comparar con'],
-  table: ['detalle', 'lista', 'registro', 'tabla', 'completo']
+  table: ['detalle', 'lista', 'registro', 'tabla', 'completo'],
+  scatter: ['dispersión', 'correlación', 'relación', 'scatter', 'disperse'],
+  heatmap: ['mapa de calor', 'intensidad', 'heatmap', 'calor', 'densidad']
 }
 
 const DATA_PATTERN = /(\d+[.,]\d+|\d+)/g
@@ -87,7 +89,9 @@ const generateTitle = (type: ChartType): string => {
     pie: 'Distribución Porcentual',
     area: 'Evolución Acumulada',
     composed: 'Análisis Combinado',
-    table: 'Resumen de Datos'
+    table: 'Resumen de Datos',
+    scatter: 'Diagrama de Dispersión',
+    heatmap: 'Mapa de Calor'
   }
   
   return titles[type]
@@ -96,59 +100,102 @@ const generateTitle = (type: ChartType): string => {
 const extractDataFromContent = (content: string, _context?: any): ChartDataPoint[] => {
   const data: ChartDataPoint[] = []
   
-  const tablePattern = /[|].+[|]\n[|][-|:]+[|]([\s\S]*?)(?=\n\n|$)/
-  const tableMatch = content.match(tablePattern)
+  // Find all table-like structures (lines starting with |)
+  const lines = content.split('\n')
+  const tableLines: string[] = []
+  let inTable = false
   
-  if (tableMatch) {
-    const lines = tableMatch[0].split('\n').filter(line => line.trim() && !line.includes('---'))
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      // Check if it's a separator line (only contains |, -, :, spaces)
+      const isSeparator = /^[\|\-\:\s]+$/.test(trimmed)
+      if (!isSeparator) {
+        tableLines.push(trimmed)
+        inTable = true
+      }
+    } else if (inTable && !trimmed.startsWith('|')) {
+      // End of table
+      if (tableLines.length > 1) break
+    }
+  }
+  
+  // Parse table if we found data rows
+  if (tableLines.length >= 2) {
+    const headers = tableLines[0]
+      .split('|')
+      .filter(h => h.trim())
+      .map(h => h.trim().toLowerCase()
+        .replace(/\s*\(.*?\)\s*/g, '') // Remove units in parentheses
+        .replace(/\s+/g, '_')
+      )
     
-    if (lines.length > 1) {
-      const headers = lines[0].split('|').filter(h => h.trim()).map(h => h.trim().toLowerCase())
+    for (let i = 1; i < tableLines.length; i++) {
+      const cells = tableLines[i].split('|').filter(c => c.trim())
+      const row: ChartDataPoint = {}
       
-      for (let i = 1; i < lines.length; i++) {
-        const cells = lines[i].split('|').filter(c => c.trim())
-        const row: ChartDataPoint = {}
+      headers.forEach((header, idx) => {
+        const cellValue = cells[idx]?.trim() || ''
+        // Handle Spanish number format (1.234.567,89)
+        const normalizedValue = cellValue
+          .replace(/\./g, '')      // Remove thousands separator
+          .replace(/,/g, '.')      // Convert decimal separator
+          .replace(/[^\d.-]/g, '') // Keep only numbers, dots, minus
+        const numValue = parseFloat(normalizedValue)
         
-        headers.forEach((header, idx) => {
-          const cellValue = cells[idx]?.trim() || ''
-          const numValue = parseFloat(cellValue.replace(/[.,]/g, '.'))
-          row[header] = isNaN(numValue) ? cellValue : numValue
-        })
-        
-        if (Object.keys(row).length > 0) {
-          data.push(row)
+        if (!isNaN(numValue) && cellValue.match(/[\d]/)) {
+          row[header] = numValue
+        } else if (cellValue) {
+          row[header] = cellValue
         }
+      })
+      
+      // Only add row if it has at least one numeric value
+      const hasNumeric = Object.values(row).some(v => typeof v === 'number')
+      if (Object.keys(row).length > 0 && hasNumeric) {
+        // Generate a name for the row if not present
+        if (!row.name && !row.ubicación && !row.region) {
+          const firstTextValue = Object.entries(row).find(([_, v]) => typeof v === 'string')
+          if (firstTextValue) {
+            row.name = firstTextValue[1] as string
+          } else {
+            row.name = `Item ${i}`
+          }
+        }
+        data.push(row)
       }
     }
   }
   
-  const jsonMatch = content.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/)
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1])
-      if (Array.isArray(parsed)) {
-        data.push(...parsed)
-      }
-    } catch {}
+  // Fallback: Try JSON extraction if no table data found
+  if (data.length === 0) {
+    const jsonMatch = content.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/)
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1])
+        if (Array.isArray(parsed)) {
+          data.push(...parsed)
+        }
+      } catch {}
+    }
   }
   
-  const keyValuePattern = /(\w+)\s*:\s*([\d.,]+)/g
-  let match
-  while ((match = keyValuePattern.exec(content)) !== null) {
-    const key = match[1].toLowerCase()
-    const value = parseFloat(match[2].replace(/,/g, '.'))
-    
-    if (!isNaN(value)) {
-      const existing = data.find(d => d.name === key || d.month === key)
-      if (existing) {
-        existing.value = value
-      } else {
+  // Fallback: Try key-value patterns
+  if (data.length === 0) {
+    const keyValuePattern = /([^:\n]+)\s*:\s*([\d.,]+)\s*(?:m³|m3)?/g
+    let match
+    while ((match = keyValuePattern.exec(content)) !== null) {
+      const key = match[1].trim().replace(/\*\*/g, '')
+      const valueStr = match[2].replace(/\./g, '').replace(/,/g, '.')
+      const value = parseFloat(valueStr)
+      
+      if (!isNaN(value) && value > 0) {
         data.push({ name: key, value })
       }
     }
   }
   
-  return data
+  return data.slice(0, 10) // Limit to 10 items for charts
 }
 
 const extractDescription = (content: string): string | undefined => {

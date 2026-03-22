@@ -3,15 +3,18 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
 import time
+import logging
 from decimal import Decimal
 
 from app.application.llm_client import llm_service
 from app.domain.entities.models import WaterRecord, Consumption, Sensor, Location
 from app.domain.repositories import WaterRecordRepository, ConsumptionRepository
 
-# Caché simple en memoria con expiración de 5 minutos
+logger = logging.getLogger(__name__)
+
+# Caché simple en memoria con expiración de 10 minutos
 query_cache: Dict[str, Dict[str, Any]] = {}
-CACHE_EXPIRY_SECONDS = 300  # 5 minutos
+CACHE_EXPIRY_SECONDS = 600  # 10 minutos
 
 
 SYSTEM_PROMPT = """Eres ACUAMED AI, un asistente experto en análisis de datos hídricos para la gestión del agua en España. Tu objetivo es proporcionar respuestas rápidas, precisas y accionables sobre cualquier aspecto de los datos hídricos.
@@ -38,112 +41,73 @@ Tablas principales:
    - volume_m3: DECIMAL (volumen en metros cúbicos)
    - consumption_type: VARCHAR tipo de consumo
 
-## CAPACIDADES DE ANÁLISIS
-- Consultas SQL complejas con JOINs, GROUP BY, subconsultas
-- Detección de anomalías y patrones inusuales
-- Análisis de tendencias temporales (diarias, mensuales, anuales)
-- Comparativas entre regiones, provincias, municipios
-- Cálculos de promedios, totales, máximos, mínimos
-- Correlaciones entre sensores y consumos
+## FORMATO DE TABLA OBLIGATORIO (CRÍTICO)
 
-## FORMATO DE RESPUESTA OPTIMIZADO
+CUANDO INCLUYAS UNA TABLA, USA ESTE FORMATO EXACTO:
 
-### 1. RESPUESTA DE TEXTO (siempre incluir):
-- **Resumen ejecutivo**: 1-2 oraciones con el hallazgo principal
-- **Detalles clave**: Puntos específicos con números formateados
-- **Recomendaciones**: Acciones concretas basadas en los datos
-- **Contexto**: Información adicional relevante
+| Nombre | Valor |
+|--------|-------|
+| Item 1 | 1.234.567 |
+| Item 2 | 987.654 |
 
-### 2. DATOS PARA GRÁFICOS (cuando aplique):
-Incluye datos estructurados que el frontend puede convertir automáticamente en gráficos. Usa estos formatos:
+REGLAS ESTRICTAS PARA TABLAS:
+1. UNA SOLA línea de separación (|--------|-------|)
+2. NO agregues líneas de separación adicionales entre filas
+3. Máximo 2-3 columnas para gráficos
+4. Primera columna = etiqueta (eje X), segunda columna = valor numérico (eje Y)
+5. Usa punto como separador de miles: 1.234.567 (NO 1234567)
+6. Usa coma como separador decimal: 1.234.567,89
+7. NUNCA incluyas unidades en las celdas numéricas (solo números)
 
-#### Opción A: Tabla Markdown (recomendada para rankings/comparativas):
-```
-| Ubicación | Consumo (m³) | Tendencia |
-|-----------|--------------|-----------|
-| Valencia | 1.250.000 | +5.2% |
-| Alicante | 980.000 | -2.1% |
-```
+EJEMPLO CORRECTO:
+| Sistema | Consumo (m³) |
+|---------|-------------|
+| Carboneras | 79.356.846 |
+| Torrevieja | 63.811.342 |
+| Águilas | 60.508.709 |
 
-#### Opción B: JSON estructurado (recomendado para series temporales):
-```json
-[
-  {{"month": "Enero", "value": 150000, "trend": "up"}},
-  {{"month": "Febrero", "value": 145000, "trend": "down"}},
-  {{"month": "Marzo", "value": 160000, "trend": "up"}}
-]
-```
+EJEMPLO INCORRECTO (NO HACER):
+| Sistema | Consumo (m³) | Tipo |
+|---------|-------------|------|
+| |-------------|------|
+| Carboneras | 79.356.846,74 m³ | Desaladora |
 
-#### Opción C: Pares clave-valor (simple y efectivo):
-- Valencia: 1.250.000 m³
-- Alicante: 980.000 m³
-- Murcia: 870.000 m³
+## ANÁLISIS INTELIGENTE
 
-### 3. INDICADORES PARA TIPO DE GRÁFICO:
-Incluye estas palabras clave para que el sistema detecte el gráfico adecuado:
-- **Línea/Tendencia**: "tendencia", "evolución", "crecimiento", "temporal", "series"
-- **Barras/Comparativa**: "comparar", "ranking", "top", "distribución", "meses"
-- **Circular/Porcentaje**: "porcentaje", "distribución", "proporción", "segmento"
-- **Área/Acumulado**: "acumulación", "acumulado", "volumen total"
+Cuando analices datos:
+1. **Identifica patrones**: ¿Hay tendencias claras? ¿Valores atípicos?
+2. **Compara con benchmarks**: ¿Están los valores dentro de rangos normales?
+3. **Sugiere acciones**: ¿Qué debería hacer el usuario con esta información?
+4. **Contextualiza**: Relaciona los datos con el contexto hídrico español
 
-## OPTIMIZACIONES DE RENDIMIENTO
-1. **Consultas SQL eficientes**: Usa JOINs optimizados, evita subconsultas innecesarias
-2. **Límites apropiados**: Máximo 100 registros por consulta, usa LIMIT cuando sea necesario
-3. **Agregaciones inteligentes**: Usa GROUP BY para resúmenes, evita procesamiento innecesario
-4. **Respuestas concisas**: Máximo 300 palabras por respuesta, enfócate en lo importante
+## FORMATO DE RESPUESTA
 
-## EJEMPLOS DE RESPUESTAS OPTIMIZADAS
+### ESTRUCTURA OBLIGATORIA:
+1. **Resumen ejecutivo** (1-2 oraciones): Hallazgo principal con datos concretos
+2. **Análisis clave**: Puntos importantes numerados
+3. **Tabla de datos**: Formato limpio para gráficos
+4. **Recomendaciones**: Acciones específicas basadas en los datos
 
-### Ejemplo 1: Consulta de consumos totales
-Usuario: "¿Cuáles son los consumos totales por región?"
+### EJEMPLO DE RESPUESTA IDEAL:
 
-Respuesta:
-**Resumen**: La Comunidad Valenciana lidera con 275M m³, seguida de Andalucía (189M m³).
+**Resumen**: Los 5 principales sistemas desaladores consumen 274.5 millones de m³, representando el 62% del total regional.
 
-**Top 3 regiones**:
-1. Comunidad Valenciana: 275.910.000 m³ (+3.2% vs año anterior)
-2. Andalucía: 189.450.000 m³ (-1.5% vs año anterior)  
-3. Región de Murcia: 125.800.000 m³ (+2.1% vs año anterior)
+**Análisis**:
+1. **Líder**: Sistema Carboneras (79,4M m³) - Mayor capacidad productiva
+2. **Segundo**: Torrevieja (63,8M m³) - Alta demanda turística
+3. **Tercero**: Águilas (60,5M m³) - Crítico para agricultura
 
-**Recomendación**: Priorizar optimización en Andalucía por tendencia negativa.
+| Sistema | Consumo (m³) |
+|---------|-------------|
+| Carboneras | 79356846 |
+| Torrevieja | 63811342 |
+| Águilas | 60508709 |
+| Dalías | 45395886 |
+| Águilas Dist. | 25485543 |
 
-| Región | Consumo Total (m³) | Variación | Eficiencia |
-|--------|-------------------|-----------|------------|
-| Valencia | 275.910.000 | +3.2% | Alta |
-| Andalucía | 189.450.000 | -1.5% | Media |
-| Murcia | 125.800.000 | +2.1% | Alta |
+**Recomendación**: Optimizar distribución entre sistemas para balancear carga.
 
-### Ejemplo 2: Detección de anomalías
-Usuario: "¿Hay anomalías en los últimos 7 días?"
-
-Respuesta:
-**Resumen**: 3 anomalías críticas detectadas en sensores de turbidez.
-
-**Anomalías críticas**:
-1. Sensor TUR-001 (Valencia): 15.2 NTU (umbral: 5 NTU) - Posible contaminación
-2. Sensor TUR-002 (Alicante): 12.8 NTU - Requiere revisión inmediata
-3. Sensor TUR-003 (Murcia): 8.9 NTU - Tendencia ascendente
-
-**Acción inmediata**: Inspeccionar fuentes de agua y sistemas de filtrado.
-
-```json
-[
-  {{"sensor": "TUR-001", "location": "Valencia", "value": 15.2, "threshold": 5, "severity": "critical"}},
-  {{"sensor": "TUR-002", "location": "Alicante", "value": 12.8, "threshold": 5, "severity": "high"}},
-  {{"sensor": "TUR-003", "location": "Murcia", "value": 8.9, "threshold": 5, "severity": "medium"}}
-]
-```
-
-## INSTRUCCIONES FINALES
-1. **Responde SIEMPRE en español** con formato claro y profesional
-2. **Incluye datos para gráficos** cuando la consulta tenga datos numéricos comparables
-3. **Sé conciso pero completo**: Máximo 3 oraciones de resumen + detalles estructurados
-4. **Usa números formateados**: 1.250.000 (no 1250000)
-5. **Proporciona contexto**: Fechas, unidades, comparativas relevantes
-6. **Sugiere acciones**: Recomendaciones específicas basadas en los datos
-7. **Optimiza para velocidad**: Consultas SQL eficientes, respuestas directas
-
-Tu objetivo es que el usuario obtenga información útil en menos de 20 segundos, con datos listos para visualizar en gráficos interactivos."""
+RESPONDE SIEMPRE EN ESPAÑOL. SÉ CONCISO Y ACCIONABLE."""
 
 
 class SQLGenerator:
@@ -187,7 +151,7 @@ SOLO devuelve la consulta SQL, sin explicaciones. SQL debe ser VÁLIDA y EJECUTA
             prompt=prompt,
             system_prompt=SYSTEM_PROMPT,
             temperature=0.1,
-            max_tokens=1000  # Aumentado para permitir consultas complejas pero optimizadas
+            max_tokens=2048  # Aumentado para SQL Generation optimizado
         )
         return result.strip() if result else ""
 
@@ -290,6 +254,35 @@ class AnomalyDetector:
 
 
 class AnalyticsChain:
+    # Pre-calculated queries for common trends (faster response)
+    PRE_CALCULATED_QUERIES = {
+        "consumo total": """
+            SELECT l.region, SUM(c.volume_m3) as total_consumption_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            GROUP BY l.region ORDER BY total_consumption_m3 DESC LIMIT 10;
+        """,
+        "tendencia mensual": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as month,
+                   SUM(c.volume_m3) as total_consumption_m3
+            FROM consumptions c
+            WHERE c.period_start >= CURRENT_DATE - INTERVAL '1 year'
+            GROUP BY EXTRACT(MONTH FROM c.period_start) ORDER BY month;
+        """,
+        "anomalias recientes": """
+            SELECT s.sensor_code, l.region, wr.value, wr.anomaly_score, wr.timestamp
+            FROM water_records wr
+            JOIN sensors s ON wr.sensor_id = s.id
+            JOIN locations l ON s.location_id = l.id
+            WHERE wr.is_anomaly = true AND wr.timestamp >= CURRENT_DATE - INTERVAL '7 days'
+            ORDER BY wr.anomaly_score DESC LIMIT 10;
+        """,
+        "top ubicaciones": """
+            SELECT l.name, l.region, SUM(c.volume_m3) as total_consumption_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            GROUP BY l.name, l.region ORDER BY total_consumption_m3 DESC LIMIT 5;
+        """,
+    }
+
     def __init__(self):
         self.llm = llm_service
         self.sql_generator = SQLGenerator(self.llm)
@@ -466,6 +459,14 @@ class AnalyticsChain:
             "description": f"Datos de {len(data)} registros"
         }
 
+    def _get_pre_calculated_sql(self, question: str) -> Optional[str]:
+        """Busca una consulta pre-calculada para preguntas comunes"""
+        question_lower = question.lower()
+        for key, sql in self.PRE_CALCULATED_QUERIES.items():
+            if key in question_lower:
+                return sql
+        return None
+
     async def query_natural_language(
         self,
         question: str,
@@ -479,6 +480,45 @@ class AnalyticsChain:
         cached_result = self._get_cached_result(cache_key)
         if cached_result:
             return cached_result
+        
+        # Verificar consultas pre-calculadas (más rápido que generar SQL)
+        pre_calculated = self._get_pre_calculated_sql(question)
+        if pre_calculated:
+            try:
+                result = await session.execute(text(pre_calculated))
+                rows = result.fetchall()
+                columns = result.keys()
+                result_data = [dict(zip(columns, row)) for row in rows]
+                
+                chart_context = self._analyze_data_for_charts(result_data, question)
+                
+                # Generar resumen rápido
+                summary_prompt = f"""Pregunta: "{question}"
+Datos: {result_data[:5]}
+
+Responde en español con un resumen conciso (máximo 200 palabras) usando los datos proporcionados. NO inventes datos."""
+                
+                explanation = await self.llm.generate(
+                    prompt=summary_prompt,
+                    system_prompt=SYSTEM_PROMPT,
+                    temperature=0.3,
+                    max_tokens=400
+                )
+                
+                result = {
+                    "question": question,
+                    "sql_generated": pre_calculated,
+                    "result": result_data,
+                    "count": len(result_data),
+                    "explanation": explanation,
+                    "chart_context": chart_context,
+                    "pre_calculated": True
+                }
+                
+                self._set_cached_result(cache_key, result)
+                return result
+            except Exception:
+                pass  # Fallback to SQL generation if pre-calculated fails
         
         schema = await self.sql_generator.get_schema_description(session)
         
@@ -521,80 +561,96 @@ class AnalyticsChain:
                 columns = result.keys()
                 result_data = [dict(zip(columns, row)) for row in rows]
         except Exception as e:
-            # Si falla la consulta compleja, intentar una consulta simple
             error_msg = str(e)
-            if "syntax error" in error_msg.lower() or "relation" in error_msg.lower():
-                # Generar consulta simple de fallback
-                simple_sql = f"""
-SELECT 
-    l.region,
-    SUM(c.volume_m3) as total_consumption_m3
-FROM consumptions c
-JOIN locations l ON c.location_id = l.id
-GROUP BY l.region
-ORDER BY total_consumption_m3 DESC
-LIMIT 5;
-"""
+            logger.error(f"Error SQL primario: {error_msg}")
+            
+            # Fallback 1: Consulta simplificada basada en el tipo de error
+            fallback_queries = [
+                # Fallback genérico: consumos por región
+                """
+                SELECT l.region, SUM(c.volume_m3) as total_consumption_m3
+                FROM consumptions c JOIN locations l ON c.location_id = l.id
+                GROUP BY l.region ORDER BY total_consumption_m3 DESC LIMIT 5;
+                """,
+                # Fallback: registros recientes
+                """
+                SELECT l.name, l.region, wr.value, wr.timestamp
+                FROM water_records wr
+                JOIN sensors s ON wr.sensor_id = s.id
+                JOIN locations l ON s.location_id = l.id
+                ORDER BY wr.timestamp DESC LIMIT 10;
+                """
+            ]
+            
+            fallback_success = False
+            for idx, fallback_sql in enumerate(fallback_queries):
                 try:
-                    result = await session.execute(text(simple_sql))
+                    result = await session.execute(text(fallback_sql))
                     rows = result.fetchall()
                     columns = result.keys()
                     result_data = [dict(zip(columns, row)) for row in rows]
-                    clean_sql = simple_sql
+                    clean_sql = fallback_sql
+                    fallback_success = True
+                    logger.info(f"Fallback {idx + 1} ejecutado correctamente")
+                    break
                 except Exception as fallback_error:
-                    return {
-                        "question": question,
-                        "sql_generated": clean_sql,
-                        "error": f"Error al ejecutar consulta: {error_msg}. Consulta simple falló: {str(fallback_error)}",
-                        "result": None,
-                        "explanation": None
-                    }
-            else:
+                    logger.warning(f"Fallback {idx + 1} falló: {str(fallback_error)}")
+                    continue
+            
+            if not fallback_success:
                 return {
                     "question": question,
                     "sql_generated": clean_sql,
-                    "error": f"Error al ejecutar consulta: {str(e)}",
+                    "error": f"Error en consulta: {error_msg}. No se pudo ejecutar consulta de respaldo. Verifica la conexión a la base de datos.",
                     "result": None,
-                    "explanation": None
+                    "explanation": "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, intenta reformular la pregunta o contacta al administrador.",
+                    "error_type": "database_error"
                 }
         
         # Limitar datos para el prompt de resumen (rendimiento)
         limited_data = result_data[:10] if len(result_data) > 10 else result_data
         
-        summary_prompt = f"""Pregunta del usuario: "{question}"
-Resultados de la consulta SQL:
+        summary_prompt = f"""Pregunta: "{question}"
+Datos obtenidos:
 {limited_data}
 
-**REGLAS ABSOLUTAS - NO INVENTAR DATOS:**
-1. Usa SOLO los datos proporcionados arriba. NO inventes valores, porcentajes o comparaciones.
-2. Si solo hay una región, di "Solo hay datos de una región" NO inventes otras regiones.
-3. Los porcentajes deben calcularse SOLO si hay datos para calcularlos.
-4. No agregues equivalencias inventadas (ej: "piscinas olímpicas").
+INSTRUCCIONES CRÍTICAS:
 
-**FORMATO DE RESPUESTA:**
-1. **Resumen ejecutivo**: 1-2 oraciones con datos REALES
-2. **Datos para gráficos**: Tabla markdown CON DATOS COMPLETOS
-3. **Recomendaciones**: Solo si hay datos suficientes
+1. **USA SOLO ESTOS DATOS** - No inventes valores, regiones ni porcentajes
+2. **FORMATO DE NÚMEROS**: Usa punto para miles (1.234.567) NO comas
+3. **TABLA LIMPIA**: Máximo 2 columnas para gráficos
 
-**TABLA MARKDOWN OBLIGATORIA:**
-Debes incluir una tabla markdown CON TODOS LOS DATOS de la consulta:
-| Región | Consumo Total (m³) |
-|--------|-------------------|
-| [usar datos reales] | [usar datos reales] |
+RESPUESTA OBLIGATORIA:
 
-**EJEMPLO CORRECTO (si solo hay Comunidad Valenciana con 349.317.432 m³):**
-**Resumen**: Solo hay datos de la Comunidad Valenciana con un consumo total de 349.317.432 m³.
+**Resumen**: [1-2 oraciones con el hallazgo principal]
 
-| Región | Consumo Total (m³) |
-|--------|-------------------|
-| Comunidad Valenciana | 349.317.432 |
+| Nombre | Valor |
+|--------|-------|
+| [Item 1] | [número sin puntos ni comas] |
+| [Item 2] | [número sin puntos ni comas] |
 
-**EJEMPLO INCORRECTO (NO HACER):**
-- Inventar otras regiones
-- Calcular porcentajes sin datos
-- Agregar "equivalente a X piscinas"
+**Análisis**:
+- [Punto clave 1]
+- [Punto clave 2]
 
-Responde SIEMPRE en español. INCLUIR TABLA MARKDOWN COMPLETA."""
+**Recomendación**: [Acción concreta]
+
+EJEMPLO CONCRETO:
+Si los datos son: [{{"region": "Valencia", "total": 123456789}}]
+
+**Resumen**: Solo hay datos de la región de Valencia con un consumo de 123.456.789 m³.
+
+| Región | Consumo |
+|--------|---------|
+| Valencia | 123456789 |
+
+**Análisis**:
+- Solo se dispone de datos de una región
+- Se necesitan más datos para comparativas
+
+**Recomendación**: Ampliar la cobertura de datos a otras regiones.
+
+RECUERDA: La tabla debe tener EXACTAMENTE este formato (sin líneas extra de separación)."""
         
         explanation = await self.llm.generate(
             prompt=summary_prompt,
@@ -693,43 +749,66 @@ Responde SIEMPRE en español. INCLUIR TABLA MARKDOWN COMPLETA."""
             JOIN stats s ON c.location_id = s.location_id
             WHERE c.volume_m3 > 0 AND s.std_volume > 0
             ORDER BY z_score DESC
-            LIMIT 50
+            LIMIT 10
         """)
         
         result = await session.execute(query)
         rows = result.fetchall()
         
+        # Filtrar solo anomalías por encima del umbral
+        anomaly_rows = [row for row in rows if row.z_score > threshold_z]
+        
+        if not anomaly_rows:
+            return []
+        
+        # Preparar datos para UNA SOLA llamada al LLM
+        anomalies_summary = []
+        for row in anomaly_rows[:5]:  # Máximo 5 anomalías para análisis
+            anomalies_summary.append(
+                f"- ID: {row.location_id[:8]}..., Volumen: {row.volume_m3:,.2f} m³, "
+                f"Promedio: {row.avg_volume:,.2f} m³, Z-Score: {row.z_score:.2f}, "
+                f"Período: {row.period_start} a {row.period_end}"
+            )
+        
+        anomalies_text = "\n".join(anomalies_summary)
+        
+        # UNA SOLA llamada al LLM para todas las anomalías
+        prompt = f"""Analiza estas {len(anomalies_summary)} anomalías de consumo de agua detectadas:
+
+{anomalies_text}
+
+Para cada anomalía indica en UNA SOLA línea:
+- Causa más probable (fuga/error medición/aumento demanda)
+- Nivel de criticidad (crítico/alto/medio)
+
+Respuesta concisa, máximo 100 palabras total."""
+        
+        try:
+            batch_analysis = await self.llm.generate(
+                prompt=prompt,
+                system_prompt="Eres un experto en análisis de datos hídricos. Responde de forma concisa.",
+                temperature=0.3,
+                max_tokens=400
+            )
+        except Exception as e:
+            logger.error(f"Error en análisis de anomalías: {e}")
+            batch_analysis = "Análisis no disponible"
+        
+        # Construir respuesta
         anomalies = []
-        for row in rows:
-            if row.z_score > threshold_z:
-                prompt = f"""Analiza esta anomalía de consumo de agua detectada:
-
-- Ubicación ID: {row.location_id}
-- Volumen consumido: {row.volume_m3} m³
-- Volumen promedio: {row.avg_volume:.2f} m³
-- Z-Score: {row.z_score:.2f}
-- Período: {row.period_start} a {row.period_end}
-
-Posibles causas (fuga,Error de medición, aumento de demanda, etc.)"""
-                
-                analysis = await self.llm.generate(
-                    prompt=prompt,
-                    system_prompt=SYSTEM_PROMPT,
-                    temperature=0.3,
-                    max_tokens=300
-                )
-                
-                anomalies.append({
-                    "id": str(row.id),
-                    "location_id": str(row.location_id),
-                    "volume_m3": float(row.volume_m3),
-                    "avg_volume": float(row.avg_volume),
-                    "z_score": float(row.z_score),
-                    "period_start": str(row.period_start),
-                    "period_end": str(row.period_end),
-                    "llm_analysis": analysis,
-                    "severity": "high" if row.z_score > 3 else "medium"
-                })
+        for row in anomaly_rows:
+            severity = "critical" if row.z_score > 5 else "high" if row.z_score > 3 else "medium"
+            anomalies.append({
+                "id": str(row.id),
+                "location_id": str(row.location_id),
+                "volume_m3": float(row.volume_m3),
+                "avg_volume": float(row.avg_volume),
+                "z_score": float(row.z_score),
+                "period_start": str(row.period_start),
+                "period_end": str(row.period_end),
+                "severity": severity,
+                "llm_analysis": batch_analysis if len(anomalies) == 0 else None
+            })
         
         return anomalies
 

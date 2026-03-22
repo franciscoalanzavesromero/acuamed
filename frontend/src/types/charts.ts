@@ -1,4 +1,4 @@
-export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'composed' | 'table'
+export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'composed' | 'table' | 'scatter' | 'heatmap'
 export type ChartSize = 'small' | 'medium' | 'large'
 
 export interface ChartDataPoint {

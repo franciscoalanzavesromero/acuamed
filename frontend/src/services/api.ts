@@ -114,5 +114,24 @@ export const api = {
   async getSchema() {
     const res = await fetch(`${API_BASE}/schema`)
     return res.json()
+  },
+
+  async getPeriodComparisons(periods: number = 2) {
+    const res = await fetch(`${API_BASE}/comparisons/period?periods=${periods}`)
+    return res.json()
+  },
+
+  async getDailyAggregations(days: number = 30, locationId?: string) {
+    const params = new URLSearchParams({ days: days.toString() })
+    if (locationId) params.append('location_id', locationId)
+    const res = await fetch(`${API_BASE}/aggregations/daily?${params}`)
+    return res.json()
+  },
+
+  async getMonthlyAggregations(months: number = 12, locationId?: string) {
+    const params = new URLSearchParams({ months: months.toString() })
+    if (locationId) params.append('location_id', locationId)
+    const res = await fetch(`${API_BASE}/aggregations/monthly?${params}`)
+    return res.json()
   }
 }
