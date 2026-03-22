@@ -133,7 +133,8 @@ async def chat_with_data(
             "response": response.get("explanation", ""),
             "data": result_data[:5],
             "sql": response.get("sql_generated", ""),
-            "requires_action": False
+            "requires_action": False,
+            "context": response.get("chart_context", {})  # Incluir contexto para gráficos
         }
         
     except Exception as e:

@@ -13,6 +13,7 @@ Ejecutar desde el directorio del proyecto:
 
 ```bash
 cd ~/ACUAMED
+chmod +x start.sh
 ./start.sh
 ```
 

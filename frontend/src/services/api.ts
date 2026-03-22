@@ -45,22 +45,48 @@ export const api = {
     return res.json()
   },
 
-  async chat(message: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: message }),
-    })
-    return res.json()
+  async chat(message: string, timeoutMs: number = 30000): Promise<any> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    
+    try {
+      const res = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: message }),
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+      return res.json()
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error(`La solicitud tardó más de ${timeoutMs / 1000} segundos. Por favor, intenta de nuevo.`)
+      }
+      throw error
+    }
   },
 
-  async query(question: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
-    })
-    return res.json()
+  async query(question: string, timeoutMs: number = 30000): Promise<any> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    
+    try {
+      const res = await fetch(`${API_BASE}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+      return res.json()
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error(`La solicitud tardó más de ${timeoutMs / 1000} segundos. Por favor, intenta de nuevo.`)
+      }
+      throw error
+    }
   },
 
   async getConsumptionSummary(params?: {

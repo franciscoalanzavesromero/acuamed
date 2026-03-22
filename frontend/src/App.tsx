@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 import Sidebar from './components/Sidebar'
 import ChatPanel from './components/ChatPanel'
@@ -9,6 +9,8 @@ import UploadHistory from './components/UploadHistory'
 import WhatIfSimulator from './components/WhatIfSimulator'
 import ReportGenerator from './components/ReportGenerator'
 import { api } from './services/api'
+import { useDashboard } from './hooks/useDashboard'
+import { ChartConfig } from './types/charts'
 
 type View = 'upload' | 'dashboard' | 'data' | 'history' | 'simulation' | 'reports'
 
@@ -17,6 +19,8 @@ function App() {
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
   const [modelStatus, setModelStatus] = useState<'loaded' | 'not_loaded' | 'unknown'>('unknown')
   const [showChat, setShowChat] = useState(true)
+  
+  const dashboard = useDashboard()
 
   useEffect(() => {
     checkApiStatus()
@@ -41,6 +45,14 @@ function App() {
     }
   }
 
+  const handleAddChartToDashboard = useCallback((chart: Omit<ChartConfig, 'id' | 'createdAt'>) => {
+    dashboard.addChart(chart)
+    
+    if (activeView !== 'dashboard') {
+      setActiveView('dashboard')
+    }
+  }, [dashboard, activeView])
+
   const getViewTitle = () => {
     const titles: Record<View, string> = {
       upload: 'Cargar Datos',
@@ -58,7 +70,12 @@ function App() {
       case 'upload':
         return <FileDropZone onUploadComplete={() => setActiveView('history')} />
       case 'dashboard':
-        return <Dashboard />
+        return (
+          <Dashboard 
+            dashboard={dashboard} 
+            onAddChart={handleAddChartToDashboard}
+          />
+        )
       case 'data':
         return <DataTable />
       case 'history':
@@ -100,7 +117,7 @@ function App() {
             {renderContent()}
           </main>
           
-          {showChat && <ChatPanel />}
+          {showChat && <ChatPanel onAddChartToDashboard={handleAddChartToDashboard} />}
         </div>
       </div>
     </div>

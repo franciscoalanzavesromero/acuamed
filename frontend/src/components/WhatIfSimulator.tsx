@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Play, AlertCircle, TrendingUp, TrendingDown, Crosshair, Download } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { Play, AlertCircle, TrendingUp, TrendingDown, Crosshair } from 'lucide-react'
 
 const PRESETS = [
   { id: 'severe_drought', name: 'Sequía Severa', icon: '🔥', color: '#dc3545' },

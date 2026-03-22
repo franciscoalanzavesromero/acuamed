@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { FileText, Download, Calendar, Building, Printer, Share2 } from 'lucide-react'
+import { useState } from 'react'
+import { FileText, Download, Calendar, Building, Printer } from 'lucide-react'
 
 export default function ReportGenerator() {
   const [loading, setLoading] = useState(false)
@@ -8,7 +8,6 @@ export default function ReportGenerator() {
     start_date: '',
     end_date: ''
   })
-  const [selectedTemplate, setSelectedTemplate] = useState('executive')
 
   const generateReport = async () => {
     setLoading(true)

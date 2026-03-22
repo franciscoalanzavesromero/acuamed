@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { FileSpreadsheet, CheckCircle, Clock, XCircle, RotateCcw, Trash } from 'lucide-react'
 import { api } from '../services/api'
 
+void api
+
 interface UploadRecord {
   id: string
   filename: string
