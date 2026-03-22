@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, MessageSquare, User } from 'lucide-react'
+import { Send, MessageSquare, User, Trash2, Maximize2, Minimize2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { api } from '../services/api'
 
 interface Message {
@@ -20,6 +23,7 @@ export default function ChatPanel() {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -29,6 +33,21 @@ export default function ChatPanel() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  const handleClearChat = () => {
+    setMessages([
+      {
+        id: Date.now().toString(),
+        role: 'ai',
+        content: 'Chat borrado. ¿En qué puedo ayudarte ahora?',
+        timestamp: new Date()
+      }
+    ])
+  }
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -86,12 +105,28 @@ export default function ChatPanel() {
   ]
 
   return (
-    <div className="chat-panel">
+    <div className={`chat-panel ${isFullscreen ? 'fullscreen' : ''}`}>
       <div className="chat-header">
         <h3>
           <MessageSquare size={20} />
           Asistente IA
         </h3>
+        <div className="chat-header-actions">
+          <button 
+            className="chat-header-btn"
+            onClick={handleClearChat}
+            title="Borrar chat"
+          >
+            <Trash2 size={18} />
+          </button>
+          <button 
+            className="chat-header-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+          >
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+        </div>
       </div>
 
       <div className="chat-messages">
@@ -104,7 +139,32 @@ export default function ChatPanel() {
                 <User size={18} className="mt-1 flex-shrink-0" style={{ color: '#388e3c' }} />
               )}
               <div className="flex-grow-1">
-                {msg.content || (
+                {msg.content ? (
+                  <ReactMarkdown
+                    components={{
+                      code({ node, className, children, ...props }: any) {
+                        const match = /language-(\w+)/.exec(className || '')
+                        const inline = node?.position?.start.line === node?.position?.end.line
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            style={oneDark as any}
+                            language={match[1]}
+                            PreTag="div"
+                            {...props}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        )
+                      }
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
                   <div className="typing">
                     <span></span>
                     <span></span>
