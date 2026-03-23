@@ -571,7 +571,7 @@ EJEMPLO:
                     prompt=summary_prompt,
                     system_prompt=SYSTEM_PROMPT,
                     temperature=0.3,
-                    max_tokens=400
+                    max_tokens=500
                 )
                 
                 logger.info(f"[QUERY_NL] Pre-calculada: tabla en respuesta: {'|' in explanation}")
@@ -751,7 +751,7 @@ Solo texto, sin tablas ni listas."""
                 prompt=summary_prompt,
                 system_prompt=None,
                 temperature=0.3,
-                max_tokens=150
+                max_tokens=500
             )
             llm_summary = llm_summary.strip() if llm_summary else ""
         except Exception:
@@ -894,7 +894,7 @@ Respuesta concisa, máximo 100 palabras total."""
                 prompt=prompt,
                 system_prompt="Eres un experto en análisis de datos hídricos. Responde de forma concisa.",
                 temperature=0.3,
-                max_tokens=400
+                max_tokens=500
             )
         except Exception as e:
             logger.error(f"Error en análisis de anomalías: {e}")
