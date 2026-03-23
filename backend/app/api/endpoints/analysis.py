@@ -131,10 +131,10 @@ async def chat_with_data(
         return {
             "question": message.question,
             "response": response.get("explanation", ""),
-            "data": result_data[:5],
+            "data": result_data[:20],
             "sql": response.get("sql_generated", ""),
             "requires_action": False,
-            "context": response.get("chart_context", {})  # Incluir contexto para gráficos
+            "context": response.get("chart_context", {})
         }
         
     except Exception as e:

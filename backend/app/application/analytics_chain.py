@@ -22,7 +22,9 @@ SYSTEM_PROMPT = """Eres ACUAMED AI, un asistente experto en análisis de datos h
 ## ESQUEMA DE BASE DE DATOS
 Tablas principales:
 1. locations (ubicaciones):
-   - id: UUID, name: VARCHAR, region: VARCHAR, province: VARCHAR, municipality: VARCHAR
+   - id: UUID, name: VARCHAR (EJ: 'Sistema Carboneras (D+D)', 'Sistema Dalías (D)', 'Sistema Torrevieja (D+D)')
+   - region: VARCHAR (Almería, Murcia, Alicante, Castellón, Valencia, etc.)
+   - province: VARCHAR, municipality: VARCHAR
    - latitude, longitude: coordenadas geográficas
    
 2. sensors (sensores):
@@ -37,75 +39,60 @@ Tablas principales:
    
 4. consumptions (consumos):
    - id: UUID, location_id: FK → locations.id
-   - period_start, period_end: TIMESTAMP
+   - period_start, period_end: TIMESTAMP (contienen año y mes)
    - volume_m3: DECIMAL (volumen en metros cúbicos)
    - consumption_type: VARCHAR tipo de consumo
+   - Para filtrar por año: EXTRACT(YEAR FROM c.period_start) = 2025
+   - Para agrupar por mes: EXTRACT(MONTH FROM c.period_start)
 
-## FORMATO DE TABLA OBLIGATORIO (CRÍTICO)
+## PATRONES DE PREGUNTAS COMUNES
 
-CUANDO INCLUYAS UNA TABLA, USA ESTE FORMATO EXACTO:
+### EVOLUCIÓN TEMPORAL (ej: "evolución consumo Carboneras 2025"):
+SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+       SUM(c.volume_m3) as total_consumo_m3
+FROM consumptions c JOIN locations l ON c.location_id = l.id
+WHERE LOWER(l.name) LIKE '%carboneras%'
+  AND EXTRACT(YEAR FROM c.period_start) = 2025
+GROUP BY EXTRACT(MONTH FROM c.period_start) ORDER BY mes;
 
-| Nombre | Valor |
-|--------|-------|
-| Item 1 | 1.234.567 |
-| Item 2 | 987.654 |
+### COMPARATIVA ENTRE SISTEMAS:
+SELECT l.name, SUM(c.volume_m3) as total_consumo_m3
+FROM consumptions c JOIN locations l ON c.location_id = l.id
+GROUP BY l.name ORDER BY total_consumo_m3 DESC;
 
-REGLAS ESTRICTAS PARA TABLAS:
-1. UNA SOLA línea de separación (|--------|-------|)
-2. NO agregues líneas de separación adicionales entre filas
-3. Máximo 2-3 columnas para gráficos
-4. Primera columna = etiqueta (eje X), segunda columna = valor numérico (eje Y)
-5. Usa punto como separador de miles: 1.234.567 (NO 1234567)
-6. Usa coma como separador decimal: 1.234.567,89
-7. NUNCA incluyas unidades en las celdas numéricas (solo números)
+### UBICACIONES DISPONIBLES:
+Los nombres en la BD son: Sistema Dalías (D), Sistema Valdelentisco (D+D),
+Sistema Torrevieja (D+D), Sistema Águilas (D+D), Sistema Mutxamel (D+D),
+Sistema Oropesa (D+D), Sistema Moncófar (D+D), Sistema Sagunto (D+D),
+Sistema Carboneras (D+D).
 
-EJEMPLO CORRECTO:
-| Sistema | Consumo (m³) |
-|---------|-------------|
-| Carboneras | 79.356.846 |
-| Torrevieja | 63.811.342 |
-| Águilas | 60.508.709 |
+Para buscar por nombre usar: LOWER(l.name) LIKE '%nombre_parcial%'
 
-EJEMPLO INCORRECTO (NO HACER):
-| Sistema | Consumo (m³) | Tipo |
-|---------|-------------|------|
-| |-------------|------|
-| Carboneras | 79.356.846,74 m³ | Desaladora |
+NUNCA digas "no hay datos" sin ejecutar primero una consulta SQL.
 
-## ANÁLISIS INTELIGENTE
+## FORMATO DE TABLA OBLIGATORIO (CRÍTICO - NO FALLAR)
 
-Cuando analices datos:
-1. **Identifica patrones**: ¿Hay tendencias claras? ¿Valores atípicos?
-2. **Compara con benchmarks**: ¿Están los valores dentro de rangos normales?
-3. **Sugiere acciones**: ¿Qué debería hacer el usuario con esta información?
-4. **Contextualiza**: Relaciona los datos con el contexto hídrico español
+CADA TABLA DEBE TENER EXACTAMENTE ESTE FORMATO:
+| Encabezado1 | Encabezado2 |
+|-------------|-------------|
+| Valor1 | Valor2 |
+| Valor3 | Valor4 |
+
+REGLAS INQUEBRANTABLES:
+1. CADA FILA EN UNA LÍNEA SEPARADA
+2. UNA SOLA línea de separación (|-------------|-------------|)
+3. NUNCA pongas múltiples filas en la misma línea
+4. NUNCA pongas el separador en la misma línea que el encabezado
+5. Los números SIN formato especial en los datos de la tabla
+6. Máximo 2-3 columnas para gráficos
 
 ## FORMATO DE RESPUESTA
 
 ### ESTRUCTURA OBLIGATORIA:
 1. **Resumen ejecutivo** (1-2 oraciones): Hallazgo principal con datos concretos
-2. **Análisis clave**: Puntos importantes numerados
-3. **Tabla de datos**: Formato limpio para gráficos
+2. **Tabla de datos**: Formato limpio para gráficos
+3. **Análisis clave**: Puntos importantes numerados
 4. **Recomendaciones**: Acciones específicas basadas en los datos
-
-### EJEMPLO DE RESPUESTA IDEAL:
-
-**Resumen**: Los 5 principales sistemas desaladores consumen 274.5 millones de m³, representando el 62% del total regional.
-
-**Análisis**:
-1. **Líder**: Sistema Carboneras (79,4M m³) - Mayor capacidad productiva
-2. **Segundo**: Torrevieja (63,8M m³) - Alta demanda turística
-3. **Tercero**: Águilas (60,5M m³) - Crítico para agricultura
-
-| Sistema | Consumo (m³) |
-|---------|-------------|
-| Carboneras | 79356846 |
-| Torrevieja | 63811342 |
-| Águilas | 60508709 |
-| Dalías | 45395886 |
-| Águilas Dist. | 25485543 |
-
-**Recomendación**: Optimizar distribución entre sistemas para balancear carga.
 
 RESPONDE SIEMPRE EN ESPAÑOL. SÉ CONCISO Y ACCIONABLE."""
 
@@ -124,26 +111,14 @@ PREGUNTA DEL USUARIO:
 "{question}"
 
 REGLAS OBLIGATORIAS:
-1. Genera SQL CONCISA (máximo 20 líneas)
+1. Genera SQL CONCISA (máximo 30 líneas)
 2. Usa solo las columnas necesarias (evitar SELECT *)
-3. Evita subconsultas complejas innecesarias
-4. Usa JOINs simples en lugar de subconsultas correlacionadas
-5. Para tendencias, usa funciones de ventana (LAG, LEAD) en lugar de subconsultas
-6. LIMITA los resultados a máximo 10 registros
-7. Si hay fechas, usa INTERVAL en lugar de cálculos complejos
-8. Evita CTEs complejas; usa consultas simples cuando sea posible
-
-EJEMPLO DE SQL CONCISA:
-SELECT 
-    l.region,
-    EXTRACT(MONTH FROM c.period_start) as month,
-    SUM(c.volume_m3) as total
-FROM consumptions c
-JOIN locations l ON c.location_id = l.id
-WHERE c.period_start >= CURRENT_DATE - INTERVAL '1 year'
-GROUP BY l.region, EXTRACT(MONTH FROM c.period_start)
-ORDER BY l.region, month
-LIMIT 10;
+3. Para buscar ubicaciones, usa: LOWER(l.name) LIKE '%nombre%'
+4. Para filtrar por año: EXTRACT(YEAR FROM c.period_start) = 2025
+5. Para agrupar por mes: EXTRACT(MONTH FROM c.period_start)
+6. Para evolución/temporal NO LIMITAR (necesarios todos los meses)
+7. Para otros tipos de consulta, LIMITA a máximo 20 registros
+8. Usa JOINs simples, evita subconsultas complejas
 
 SOLO devuelve la consulta SQL, sin explicaciones. SQL debe ser VÁLIDA y EJECUTABLE."""
 
@@ -162,35 +137,43 @@ TABLAS DISPONIBLES:
 1. locations
    - id: UUID (clave primaria)
    - name: VARCHAR(255) - nombre de la ubicación
-   - region: VARCHAR(100) - región
+     EJEMPLOS: 'Sistema Carboneras (D+D)', 'Sistema Dalías (D)', 'Sistema Torrevieja (D+D)',
+               'Sistema Águilas (D+D)', 'Sistema Sagunto (D+D)', 'Sistema Oropesa (D+D)',
+               'Sistema Moncófar (D+D)', 'Sistema Mutxamel (D+D)', 'Sistema Valdelentisco (D+D)'
+   - region: VARCHAR(100) - región (Almería, Murcia, Alicante, Castellón, Valencia)
    - province: VARCHAR(100) - provincia
-   - municipality: VARCHAR(100) - municipio
    - latitude, longitude: coordenadas
 
-2. sensors
-   - id: UUID (clave primaria)
-   - sensor_code: VARCHAR(50) - código único del sensor
-   - name: VARCHAR(255) - nombre descriptivo
-   - sensor_type: ENUM(caudalimetro, presion, temperatura, turbidez, ph, conductividad, nivel)
-   - location_id: UUID (FK -> locations.id)
-   - unit: VARCHAR(20) - unidad de medida
-
-3. water_records
-   - id: UUID (clave primaria)
-   - sensor_id: UUID (FK -> sensors.id)
-   - timestamp: TIMESTAMP WITH TIME ZONE
-   - value: DECIMAL
-   - is_anomaly: BOOLEAN
-   - anomaly_score: FLOAT (0-1)
-   - anomaly_reason: TEXT
-
-4. consumptions
+2. consumptions
    - id: UUID (clave primaria)
    - location_id: UUID (FK -> locations.id)
-   - period_start: TIMESTAMP
-   - period_end: TIMESTAMP
+   - period_start: TIMESTAMP - inicio del período (CONTIENE AÑO Y MES)
+   - period_end: TIMESTAMP - fin del período
    - volume_m3: DECIMAL - volumen en metros cúbicos
    - consumption_type: VARCHAR(50) - tipo de consumo
+
+PATRONES SQL:
+
+-- Evolución mensual por ubicación (para preguntas como "evolución Carboneras 2025"):
+SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+       SUM(c.volume_m3) as total_consumo_m3
+FROM consumptions c JOIN locations l ON c.location_id = l.id
+WHERE LOWER(l.name) LIKE '%carboneras%'
+  AND EXTRACT(YEAR FROM c.period_start) = 2025
+GROUP BY EXTRACT(MONTH FROM c.period_start) ORDER BY mes;
+
+-- Consumo total por sistema:
+SELECT l.name, SUM(c.volume_m3) as total_consumo_m3
+FROM consumptions c JOIN locations l ON c.location_id = l.id
+GROUP BY l.name ORDER BY total_consumo_m3 DESC;
+
+-- Evolución por sistema y mes (sin LIMIT para series temporales):
+SELECT l.name, EXTRACT(MONTH FROM c.period_start) as mes,
+       SUM(c.volume_m3) as total_consumo_m3
+FROM consumptions c JOIN locations l ON c.location_id = l.id
+WHERE EXTRACT(YEAR FROM c.period_start) = 2025
+GROUP BY l.name, EXTRACT(MONTH FROM c.period_start)
+ORDER BY l.name, mes;
 """
         return schema
 
@@ -256,17 +239,71 @@ class AnomalyDetector:
 class AnalyticsChain:
     # Pre-calculated queries for common trends (faster response)
     PRE_CALCULATED_QUERIES = {
+        "evolución carboneras": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
+                   SUM(c.volume_m3) as total_consumo_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            WHERE LOWER(l.name) LIKE '%carboneras%'
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
+        """,
+        "evolución dalías": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
+                   SUM(c.volume_m3) as total_consumo_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            WHERE LOWER(l.name) LIKE '%dali%'
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
+        """,
+        "evolución torrevieja": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
+                   SUM(c.volume_m3) as total_consumo_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            WHERE LOWER(l.name) LIKE '%torrevieja%'
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
+        """,
+        "evolución águilas": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
+                   SUM(c.volume_m3) as total_consumo_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            WHERE LOWER(l.name) LIKE '%águilas%' OR LOWER(l.name) LIKE '%aguilas%'
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
+        """,
+        "evolución sagunto": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
+                   SUM(c.volume_m3) as total_consumo_m3
+            FROM consumptions c JOIN locations l ON c.location_id = l.id
+            WHERE LOWER(l.name) LIKE '%sagunto%'
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
+        """,
         "consumo total": """
             SELECT l.region, SUM(c.volume_m3) as total_consumption_m3
             FROM consumptions c JOIN locations l ON c.location_id = l.id
             GROUP BY l.region ORDER BY total_consumption_m3 DESC LIMIT 10;
         """,
         "tendencia mensual": """
-            SELECT EXTRACT(MONTH FROM c.period_start) as month,
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
                    SUM(c.volume_m3) as total_consumption_m3
             FROM consumptions c
-            WHERE c.period_start >= CURRENT_DATE - INTERVAL '1 year'
-            GROUP BY EXTRACT(MONTH FROM c.period_start) ORDER BY month;
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
+        """,
+        "consumo mensual": """
+            SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                   EXTRACT(YEAR FROM c.period_start) as anio,
+                   SUM(c.volume_m3) as total_consumption_m3
+            FROM consumptions c
+            GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+            ORDER BY anio, mes;
         """,
         "anomalias recientes": """
             SELECT s.sensor_code, l.region, wr.value, wr.anomaly_score, wr.timestamp
@@ -460,11 +497,13 @@ class AnalyticsChain:
         }
 
     def _get_pre_calculated_sql(self, question: str) -> Optional[str]:
-        """Busca una consulta pre-calculada para preguntas comunes"""
+        """Busca una consulta pre-calculada para preguntas comunes.
+        Ordena por longitud descendente para que las más específicas coincidan primero."""
         question_lower = question.lower()
-        for key, sql in self.PRE_CALCULATED_QUERIES.items():
+        sorted_keys = sorted(self.PRE_CALCULATED_QUERIES.keys(), key=len, reverse=True)
+        for key in sorted_keys:
             if key in question_lower:
-                return sql
+                return self.PRE_CALCULATED_QUERIES[key]
         return None
 
     async def query_natural_language(
@@ -484,6 +523,8 @@ class AnalyticsChain:
         # Verificar consultas pre-calculadas (más rápido que generar SQL)
         pre_calculated = self._get_pre_calculated_sql(question)
         if pre_calculated:
+            logger.info(f"[QUERY_NL] Pregunta: '{question}'")
+            logger.info(f"[QUERY_NL] Usando consulta pre-calculada: {pre_calculated[:100]}...")
             try:
                 result = await session.execute(text(pre_calculated))
                 rows = result.fetchall()
@@ -492,11 +533,24 @@ class AnalyticsChain:
                 
                 chart_context = self._analyze_data_for_charts(result_data, question)
                 
-                # Generar resumen rápido
                 summary_prompt = f"""Pregunta: "{question}"
 Datos: {result_data[:5]}
 
-Responde en español con un resumen conciso (máximo 200 palabras) usando los datos proporcionados. NO inventes datos."""
+INSTRUCCIONES CRÍTICAS:
+1. USA SOLO LOS DATOS PROPORCIONADOS
+2. CADA FILA EN UNA LÍNEA SEPARADA
+3. NÚMEROS SIN formato (123456789, NO 123.456.789)
+
+**Resumen**: [1-2 oraciones]
+
+| [Col1] | [Col2] |
+|--------|--------|
+| [Dato] | [Valor] |
+
+EJEMPLO:
+| Sistema | Consumo |
+|---------|---------|
+| Carboneras | 99447958 |"""
                 
                 explanation = await self.llm.generate(
                     prompt=summary_prompt,
@@ -504,6 +558,8 @@ Responde en español con un resumen conciso (máximo 200 palabras) usando los da
                     temperature=0.3,
                     max_tokens=400
                 )
+                
+                logger.info(f"[QUERY_NL] Pre-calculada: tabla en respuesta: {'|' in explanation}")
                 
                 result = {
                     "question": question,
@@ -517,8 +573,9 @@ Responde en español con un resumen conciso (máximo 200 palabras) usando los da
                 
                 self._set_cached_result(cache_key, result)
                 return result
-            except Exception:
-                pass  # Fallback to SQL generation if pre-calculated fails
+            except Exception as e:
+                logger.warning(f"Query pre-calculada falló: {e}. Generando SQL con LLM...")
+                # Continuar a la generación SQL con LLM
         
         schema = await self.sql_generator.get_schema_description(session)
         
@@ -564,23 +621,52 @@ Responde en español con un resumen conciso (máximo 200 palabras) usando los da
             error_msg = str(e)
             logger.error(f"Error SQL primario: {error_msg}")
             
-            # Fallback 1: Consulta simplificada basada en el tipo de error
-            fallback_queries = [
-                # Fallback genérico: consumos por región
-                """
-                SELECT l.region, SUM(c.volume_m3) as total_consumption_m3
+            # Fallback 1: Consulta inteligente basada en el tipo de error y la pregunta
+            fallback_queries = []
+            
+            # Detectar si la pregunta menciona una ubicación específica
+            location_keywords = [
+                'carboneras', 'dalías', 'dalias', 'torrevieja', 'águilas', 'aguilas',
+                'sagunto', 'mutxamel', 'oropesa', 'moncófar', 'valdelentisco'
+            ]
+            found_location = None
+            for loc in location_keywords:
+                if loc in question.lower():
+                    found_location = loc
+                    break
+            
+            if found_location:
+                # Fallback específico por ubicación
+                fallback_queries.append(f"""
+                    SELECT EXTRACT(MONTH FROM c.period_start) as mes,
+                           EXTRACT(YEAR FROM c.period_start) as anio,
+                           SUM(c.volume_m3) as total_consumo_m3
+                    FROM consumptions c
+                    JOIN locations l ON c.location_id = l.id
+                    WHERE LOWER(l.name) LIKE '%{found_location}%'
+                    GROUP BY EXTRACT(YEAR FROM c.period_start), EXTRACT(MONTH FROM c.period_start)
+                    ORDER BY anio, mes;
+                """)
+            
+            # Fallback genérico: consumos por ubicación y mes del año actual
+            fallback_queries.append("""
+                SELECT l.name as sistema,
+                       EXTRACT(MONTH FROM c.period_start) as mes,
+                       SUM(c.volume_m3) as total_consumo_m3
                 FROM consumptions c JOIN locations l ON c.location_id = l.id
-                GROUP BY l.region ORDER BY total_consumption_m3 DESC LIMIT 5;
-                """,
-                # Fallback: registros recientes
-                """
+                WHERE EXTRACT(YEAR FROM c.period_start) = EXTRACT(YEAR FROM CURRENT_DATE)
+                GROUP BY l.name, EXTRACT(MONTH FROM c.period_start)
+                ORDER BY l.name, mes;
+            """)
+            
+            # Fallback: registros recientes
+            fallback_queries.append("""
                 SELECT l.name, l.region, wr.value, wr.timestamp
                 FROM water_records wr
                 JOIN sensors s ON wr.sensor_id = s.id
                 JOIN locations l ON s.location_id = l.id
                 ORDER BY wr.timestamp DESC LIMIT 10;
-                """
-            ]
+            """)
             
             fallback_success = False
             for idx, fallback_sql in enumerate(fallback_queries):
@@ -608,26 +694,42 @@ Responde en español con un resumen conciso (máximo 200 palabras) usando los da
                 }
         
         # Limitar datos para el prompt de resumen (rendimiento)
-        limited_data = result_data[:10] if len(result_data) > 10 else result_data
+        # Para series temporales, enviar todos los datos. Para otros, limitar
+        question_lower_q = question.lower()
+        is_temporal_q = any(w in question_lower_q for w in [
+            "evolución", "evolucion", "tendencia", "mensual", "mes", "temporal",
+            "anual", "año", "años", "periodo", "período"
+        ])
+        if is_temporal_q:
+            limited_data = result_data[:30] if len(result_data) > 30 else result_data
+        else:
+            limited_data = result_data[:20] if len(result_data) > 20 else result_data
         
         summary_prompt = f"""Pregunta: "{question}"
 Datos obtenidos:
 {limited_data}
 
-INSTRUCCIONES CRÍTICAS:
+INSTRUCCIONES CRÍTICAS PARA TABLAS:
 
-1. **USA SOLO ESTOS DATOS** - No inventes valores, regiones ni porcentajes
-2. **FORMATO DE NÚMEROS**: Usa punto para miles (1.234.567) NO comas
-3. **TABLA LIMPIA**: Máximo 2 columnas para gráficos
+1. USA SOLO LOS DATOS PROPORCIONADOS - No inventes valores
+2. CADA FILA EN UNA LÍNEA SEPARADA (obligation absoluta)
+3. FORMATO EXACTO DE TABLA:
+   | Nombre | Valor |
+   |--------|-------|
+   | [Item] | [número] |
+4. NÚMEROS: Escribe los números SIN formato (123456789, NO 123.456.789)
+5. NUNCA combines múltiples filas en una línea
+6. NUNCA pongas el separador (|---|) en la misma línea que el encabezado
+7. SOLO una línea de separación entre encabezado y datos
 
-RESPUESTA OBLIGATORIA:
+FORMATO DE RESPUESTA:
 
-**Resumen**: [1-2 oraciones con el hallazgo principal]
+**Resumen**: [1-2 oraciones con hallazgo principal]
 
-| Nombre | Valor |
-|--------|-------|
-| [Item 1] | [número sin puntos ni comas] |
-| [Item 2] | [número sin puntos ni comas] |
+| [Columna1] | [Columna2] |
+|------------|------------|
+| [Dato1] | [Valor1] |
+| [Dato2] | [Valor2] |
 
 **Análisis**:
 - [Punto clave 1]
@@ -636,28 +738,27 @@ RESPUESTA OBLIGATORIA:
 **Recomendación**: [Acción concreta]
 
 EJEMPLO CONCRETO:
-Si los datos son: [{{"region": "Valencia", "total": 123456789}}]
+Si los datos son: [{{"name": "Carboneras", "total_consumption_m3": 99447958}}]
 
-**Resumen**: Solo hay datos de la región de Valencia con un consumo de 123.456.789 m³.
+COPIAR ESTE FORMATO EXACTO:
+**Resumen**: Sistema Carboneras lidera con 99.447.958 m³ de consumo.
 
-| Región | Consumo |
-|--------|---------|
-| Valencia | 123456789 |
+| Sistema | Consumo |
+|---------|---------|
+| Carboneras | 99447958 |
 
-**Análisis**:
-- Solo se dispone de datos de una región
-- Se necesitan más datos para comparativas
-
-**Recomendación**: Ampliar la cobertura de datos a otras regiones.
-
-RECUERDA: La tabla debe tener EXACTAMENTE este formato (sin líneas extra de separación)."""
+RECUERDA: Cada fila de datos en UNA LÍNEA SEPARADA. Sin excepciones."""
         
         explanation = await self.llm.generate(
             prompt=summary_prompt,
             system_prompt=SYSTEM_PROMPT,
             temperature=0.3,
-            max_tokens=600  # Aumentado para permitir tablas markdown completas
+            max_tokens=600
         )
+        
+        logger.info(f"[QUERY_NL] Respuesta LLM contiene tabla: {'|' in explanation}")
+        if '|' in explanation:
+            logger.debug(f"[QUERY_NL] Tabla detectada en respuesta")
         
         # Analizar datos para determinar el mejor formato de gráfico
         chart_context = self._analyze_data_for_charts(result_data, question)

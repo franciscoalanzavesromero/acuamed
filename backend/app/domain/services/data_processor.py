@@ -268,6 +268,70 @@ class ExcelParser:
         return result
 
 
+SYSTEM_CODE_MAP = {
+    'e11a1': 'Sistema Dalías (D)',
+    'e11a4': 'Sistema Dalías (D)',
+    'e11a5': 'Sistema Dalías (D)',
+    'e12a1': 'Sistema Dalías (D)',
+    'e12a5': 'Sistema Dalías (D)',
+    'e12g1': 'Sistema Dalías (D)',
+    'e12g2': 'Sistema Dalías (D)',
+    'e12g5': 'Sistema Dalías (D)',
+    'e12g6': 'Sistema Dalías (D)',
+    'e12g7': 'Sistema Dalías (D)',
+    'e12i1': 'Sistema Dalías (D)',
+    'e12i3': 'Sistema Dalías (D)',
+    'e12t1': 'Sistema Dalías (D)',
+    'e1a1': 'Sistema Dalías (D)',
+    'e52f1': 'Sistema Dalías (D)',
+    'e21a1': 'Sistema Valdelentisco (D+D)',
+    'e21i0': 'Sistema Valdelentisco (D+D)',
+    'e22p0': 'Sistema Valdelentisco (D+D)',
+    'e21b1': 'Sistema Torrevieja (D+D)',
+    'e21b11': 'Sistema Torrevieja (D+D)',
+    'e22f1': 'Sistema Torrevieja (D+D)',
+    'e21e1': 'Sistema Águilas (D+D)',
+    'e21e11': 'Sistema Águilas (D+D)',
+    'e21e21': 'Sistema Águilas (D+D)',
+    'e21e22': 'Sistema Águilas (D+D)',
+    'e21e5': 'Sistema Águilas (D+D)',
+    'e31b1': 'Sistema Mutxamel (D+D)',
+    'e31b11': 'Sistema Mutxamel (D+D)',
+    'e31e2': 'Sistema Oropesa (D+D)',
+    'e31e21': 'Sistema Oropesa (D+D)',
+    'e31e3': 'Sistema Moncófar (D+D)',
+    'e31e31': 'Sistema Moncófar (D+D)',
+    'e31f1': 'Sistema Oropesa (D+D)',
+    'e31k0': 'Sistema Dalías (D)',
+    'e31l1': 'Sistema Dalías (D)',
+    'e32c1': 'Sistema Sagunto (D+D)',
+    'e32d1': 'Sistema Sagunto (D+D)',
+    'e32e1': 'Sistema Sagunto (D+D)',
+    'e32j1': 'Sistema Sagunto (D+D)',
+    'e32n6': 'Sistema Sagunto (D+D)',
+    'e32n61': 'Sistema Sagunto (D+D)',
+    'e32n7': 'Sistema Sagunto (D+D)',
+    'e34b1': 'Sistema Sagunto (D+D)',
+    'e34c1': 'Sistema Sagunto (D+D)',
+    'e34c2': 'Sistema Sagunto (D+D)',
+    'e34c3': 'Sistema Sagunto (D+D)',
+    'e34c4': 'Sistema Sagunto (D+D)',
+    'e34c5': 'Sistema Sagunto (D+D)',
+    'e34c6': 'Sistema Sagunto (D+D)',
+    'e34c7': 'Sistema Sagunto (D+D)',
+    'e34c8': 'Sistema Sagunto (D+D)',
+    'e34c9': 'Sistema Sagunto (D+D)',
+    'e34c10': 'Sistema Sagunto (D+D)',
+    'e34c11': 'Sistema Sagunto (D+D)',
+    'e34c12': 'Sistema Sagunto (D+D)',
+    'e6a1': 'Sistema Carboneras (D+D)',
+    'e6a11': 'Sistema Carboneras (D+D)',
+    'e6a3': 'Sistema Carboneras (D+D)',
+    'e6a4': 'Sistema Dalías (D)',
+    'e32n1': 'Sistema Sagunto (D+D)',
+}
+
+
 class CostesExplotacionCleaner:
     """Limpiador específico para archivos de costes de explotación"""
     
@@ -304,6 +368,21 @@ class CostesExplotacionCleaner:
         
         # Renombrar columnas
         self.df = self.df.rename(columns=column_mapping)
+        
+        # Crear columna location_name usando el mapeo de códigos
+        if 'location_code' in self.df.columns:
+            self.df['location_name'] = (
+                self.df['location_code']
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .map(SYSTEM_CODE_MAP)
+            )
+            unmapped = self.df['location_name'].isna().sum()
+            if unmapped > 0:
+                self.warnings.append(
+                    f"{unmapped} registros con código de ubicación sin mapeo conocido"
+                )
         
         # Crear columnas de fecha de período
         if 'year' in self.df.columns and 'month' in self.df.columns:
@@ -375,9 +454,11 @@ class CostesExplotacionCleaner:
         if 'name' in self.df.columns:
             self.df = self.df.dropna(subset=['name'])
         
-        # Agregar region por defecto
-        if 'region' not in self.df.columns:
-            self.df['region'] = 'Comunidad Valenciana'
+        # Usar province como region (la provincia ES la región en este contexto geográfico)
+        if 'province' in self.df.columns:
+            self.df['region'] = self.df['province']
+        elif 'region' not in self.df.columns:
+            self.df['region'] = 'Desconocida'
         
         self.rows_processed = len(self.df)
         return self.df

@@ -1,0 +1,64 @@
+PREGUNTAS DE PRUEBA PARA VERIFICAR GENERACIÓN DE GRÁFICOS
+=========================================================
+
+INSTRUCCIONES:
+1. Usar cada pregunta en el chat de la IA (frontend)
+2. Verificar que se genera un gráfico automáticamente
+3. El gráfico debe ser del tipo apropiado y mostrar los datos correctamente
+4. El gráfico debe poder añadirse al dashboard
+
+CATEGORÍAS:
+- TOP/RANKING: Gráficos de barras
+- TENDENCIAS TEMPORALES: Gráficos de líneas o áreas
+- COMPARATIVAS: Gráficos de barras o compuestos
+- DISTRIBUCIONES: Gráficos de torta o barras
+- ANOMALÍAS: Gráficos de dispersión o líneas con marcadores
+- AGREGACIONES: Tablas o gráficos de barras
+
+PREGUNTAS (30):
+
+1. Top 5 ubicaciones por consumo total de agua
+2. Mostrar las 3 desaladoras con mayor producción mensual
+3. Evolución del consumo de agua en Sistema Carboneras durante 2025
+4. Comparar consumo entre Sistema Torrevieja y Sistema Águilas
+5. Tendencia de consumo mensual en la Comunidad Valenciana
+6. Distribución porcentual de consumo por tipo de red
+7. Consumo acumulado por trimestre en 2025
+8. Top 10 meses con mayor consumo en todos los sistemas
+9. Anomalías en el consumo de agua en el último año
+10. Comparativa de consumo entre sistemas desaladores (Carboneras, Águilas, Torrevieja)
+11. Evolución semanal del consumo en Sistema Dalías
+12. Ranking de sistemas por consumo en el último trimestre
+13. Distribución de consumos por provincia
+14. Tendencia de consumo de agua industrial vs doméstica
+15. Consumo promedio mensual por sistema de desalación
+16. Top 5 registros individuales de mayor consumo
+17. Análisis de patrones de consumo en fines de semana vs días laborables
+18. Evolución anual del consumo total de agua
+19. Comparativa de eficiencia entre sistemas de desalación
+20. Consumo de agua por tipo de subscriber (código de suscriptor)
+21. Tendencia de consumo en Sistema Mutxamel durante 2024
+22. Distribución geográfica del consumo de agua
+23. Anomalías detectadas en sensores de caudal
+24. Consumo acumulado por sistema en el último año
+25. Comparación de consumo entre sistemas D y D+D
+26. Evolución diaria del consumo en Sistema Sagunto
+27. Top 5 sistemas con menor consumo de energía por m³ producido
+28. Distribución de consumos por tipo de instalación
+29. Tendencia de consumo de agua en horario nocturno vs diurno
+30. Análisis de estacionalidad en el consumo de agua por sistemas
+
+CRITERIOS DE EVALUACIÓN:
+□ La IA responde con una tabla Markdown bien formateada
+□ El frontend detecta la tabla y genera un gráfico
+□ El gráfico es del tipo apropiado (barras, líneas, etc.)
+□ Los datos numéricos se muestran correctamente formateados
+□ El gráfico es interactivo y puede añadirse al dashboard
+□ No aparece el error "Cannot read 'clipboard'"
+
+NOTAS:
+- Usar preguntas específicas con nombres de sistemas reales
+- Las preguntas deben ser en español
+- El sistema debe generar tablas con formato: | columna1 | columna2 |
+- Los números grandes deben usar formato español (1.234.567,89)
+- Las fechas deben mostrarse en formato dd/mm/aaaa

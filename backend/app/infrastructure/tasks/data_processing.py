@@ -11,7 +11,9 @@ from app.domain.entities.models import (
     FileUpload, FileUploadStatus, Location, Sensor, 
     WaterRecord, Consumption, SensorType
 )
-from app.domain.services.data_processor import FileProcessor, ExcelProcessingError
+from app.domain.services.data_processor import FileProcessor, ExcelProcessingError, SYSTEM_CODE_MAP
+import logging
+logger = logging.getLogger(__name__)
 from app.infrastructure.db import AsyncSessionLocal
 
 
@@ -107,6 +109,11 @@ def process_excel_file(self: DatabaseTask, file_upload_id: str, file_path: str) 
                         location_code = loc_data.get("location_code", "").lower()
                         if location_code:
                             locations_map[location_code] = location.id
+                        
+                        # Añadir mapeo inverso: códigos NAV_DIM1_ID → location.id
+                        for nav_code, system_name in SYSTEM_CODE_MAP.items():
+                            if system_name.lower() == name.lower():
+                                locations_map[nav_code] = location.id
                     
                     await session.commit()
                 
@@ -165,19 +172,37 @@ def process_excel_file(self: DatabaseTask, file_upload_id: str, file_path: str) 
                             return obj
                     for cons_data in result["consumos"]["data"]:
                         cons_data = clean_nans(cons_data)
-                        # Manejar tanto el formato antiguo como el nuevo
-                        location_name = cons_data.get("ubicacion", "").lower()
-                        location_code = cons_data.get("location_code", "").lower()
+                        location_id = None
                         
-                        # Buscar ubicación por nombre o por código
-                        location_id = locations_map.get(location_name)
-                        if not location_id and location_code:
-                            # Buscar ubicación por código (NAV_DIM1_ID)
+                        # Prioridad 1: buscar por location_name (generado por SYSTEM_CODE_MAP)
+                        location_name = cons_data.get("location_name", "")
+                        if location_name:
+                            location_id = locations_map.get(location_name.lower())
+                        
+                        # Prioridad 2: buscar por código NAV_DIM1_ID directamente
+                        if not location_id:
+                            location_code = cons_data.get("location_code", "").lower()
                             location_id = locations_map.get(location_code)
                         
-                        # Si no se encuentra ubicación, usar la primera disponible
-                        if not location_id and locations_map:
-                            location_id = list(locations_map.values())[0]
+                        # Prioridad 3: buscar por substring en nombres de ubicaciones
+                        if not location_id and location_name:
+                            base_name = location_name.lower()
+                            for prefix in ["(d+d)", "(d)", "(d+ d)"]:
+                                base_name = base_name.replace(prefix, "")
+                            base_name = base_name.strip()
+                            for loc_key, loc_id in locations_map.items():
+                                if base_name and base_name in loc_key.lower():
+                                    location_id = loc_id
+                                    break
+                        
+                        # Loggear warning si no se encuentra ubicación, NO usar fallback silencioso
+                        if not location_id:
+                            logger.warning(
+                                f"Sin ubicación para: name={location_name}, "
+                                f"code={cons_data.get('location_code', '')}. "
+                                f"Registro ignorado."
+                            )
+                            continue
                         
                         # Obtener fechas (formato nuevo o antiguo)
                         period_start = cons_data.get("period_start")
