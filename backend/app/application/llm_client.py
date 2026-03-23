@@ -83,7 +83,7 @@ class LLMService:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     payload = {
-                        "model": "ministral-3-8b-instruct-2512",
+                        "model": settings.llm_model,
                         "messages": messages,
                         "temperature": temperature,
                         "max_tokens": max_tokens,

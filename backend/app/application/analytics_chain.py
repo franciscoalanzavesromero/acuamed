@@ -102,33 +102,40 @@ class SQLGenerator:
         self.llm = llm_client
 
     async def generate_sql(self, question: str, schema_info: str) -> str:
-        prompt = f"""Eres un experto en SQL optimizado. Tu tarea es generar consultas SQL EFICIENTES y CONCISAS.
+        # Formato nativo de SQLCoder (defog/sqlcoder-7b-2)
+        # El modelo está entrenado para completar este patrón exacto.
+        prompt = f"""### Task
+Generate a SQL query to answer [QUESTION]{question}[/QUESTION]
 
-ESQUEMA DE BASE DE DATOS:
+### Database Schema
+The query will run on a PostgreSQL database with the following schema:
 {schema_info}
 
-PREGUNTA DEL USUARIO:
-"{question}"
+### Additional rules
+- Use LOWER(l.name) LIKE '%keyword%' to search location names
+- Use EXTRACT(YEAR FROM c.period_start) to filter by year
+- Use EXTRACT(MONTH FROM c.period_start) to group by month
+- Do NOT add LIMIT for temporal/evolution queries (need all months)
+- Add LIMIT 20 for other query types
+- Use simple JOINs, avoid complex subqueries
+- Return ONLY the SQL query, no explanations
 
-REGLAS OBLIGATORIAS:
-1. Genera SQL CONCISA (máximo 30 líneas)
-2. Usa solo las columnas necesarias (evitar SELECT *)
-3. Para buscar ubicaciones, usa: LOWER(l.name) LIKE '%nombre%'
-4. Para filtrar por año: EXTRACT(YEAR FROM c.period_start) = 2025
-5. Para agrupar por mes: EXTRACT(MONTH FROM c.period_start)
-6. Para evolución/temporal NO LIMITAR (necesarios todos los meses)
-7. Para otros tipos de consulta, LIMITA a máximo 20 registros
-8. Usa JOINs simples, evita subconsultas complejas
+### Answer
+Given the database schema, here is the SQL query that answers [QUESTION]{question}[/QUESTION]
+[SQL]"""
 
-SOLO devuelve la consulta SQL, sin explicaciones. SQL debe ser VÁLIDA y EJECUTABLE."""
-
+        # SQLCoder no necesita system prompt, el formato del prompt es suficiente
         result = await self.llm.generate(
             prompt=prompt,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=None,
             temperature=0.1,
-            max_tokens=2048  # Aumentado para SQL Generation optimizado
+            max_tokens=512
         )
-        return result.strip() if result else ""
+        # SQLCoder puede cerrar con [/SQL] - lo limpiamos
+        sql = result.strip() if result else ""
+        if "[/SQL]" in sql:
+            sql = sql[:sql.index("[/SQL]")].strip()
+        return sql
 
     async def get_schema_description(self, session: AsyncSession) -> str:
         schema = """
@@ -384,19 +391,27 @@ class AnalyticsChain:
         # Determinar tipo de gráfico basado en datos y pregunta
         question_lower = question.lower()
         
+        # Detectar si los datos tienen columnas temporales
+        has_temporal_col = any(
+            any(t in col.lower() for t in ["month", "year", "date", "period", "mes", "año"])
+            for col in columns
+        )
+
         chart_type = "bar"  # Por defecto
-        
-        # Si hay pocos datos (1-3 registros), usar barras para comparación simple
-        if len(data) <= 3:
-            chart_type = "bar"
-        elif any(word in question_lower for word in ["tendencia", "evolución", "tiempo", "meses", "años"]):
+
+        if any(word in question_lower for word in ["tendencia", "evolución", "histórico", "evolucio", "tiempo", "series temporales"]):
             chart_type = "line"
-        elif any(word in question_lower for word in ["porcentaje", "distribución", "proporción"]):
+        elif has_temporal_col and any(word in question_lower for word in ["mensual", "anual", "mes", "año", "meses", "años"]):
+            chart_type = "line"
+        elif any(word in question_lower for word in ["porcentaje", "proporción", "reparto", "radial", "región", "regiones"]):
             chart_type = "pie"
-        elif any(word in question_lower for word in ["acumulado", "total", "volumen"]):
+        elif any(word in question_lower for word in ["acumulado", "acumulación"]):
             chart_type = "area"
-        elif any(word in question_lower for word in ["comparar", "comparativa", "ranking", "top"]):
-            chart_type = "bar"
+        elif has_temporal_col:
+            chart_type = "area"
+        elif 3 <= len(data) <= 7 and not any(word in question_lower for word in ["top", "ranking", "comparar"]):
+            # Pocos registros sin intención de ranking → pie
+            chart_type = "pie"
         
         # Determinar ejes - priorizar columnas con datos más relevantes
         # Primero verificar si es una consulta de tendencia temporal
@@ -705,60 +720,50 @@ EJEMPLO:
         else:
             limited_data = result_data[:20] if len(result_data) > 20 else result_data
         
+        # Generar tabla markdown en Python directamente desde los datos
+        # (no depender del LLM para el formato de tabla - SQLCoder es un modelo SQL, no chat)
+        def build_markdown_table(data: list) -> str:
+            if not data:
+                return ""
+            columns = list(data[0].keys())
+            sep = "|" + "|".join("-" * (len(c) + 2) for c in columns) + "|"
+            header = "| " + " | ".join(str(c) for c in columns) + " |"
+            rows = []
+            for row in data:
+                cells = []
+                for c in columns:
+                    v = row[c]
+                    cells.append(str(v) if v is not None else "")
+                rows.append("| " + " | ".join(cells) + " |")
+            return "\n".join([header, sep] + rows)
+
+        markdown_table = build_markdown_table(limited_data)
+
+        # Pedir al LLM solo un resumen textual breve (sin tabla)
         summary_prompt = f"""Pregunta: "{question}"
-Datos obtenidos:
-{limited_data}
+Datos: {limited_data[:5]}
 
-INSTRUCCIONES CRÍTICAS PARA TABLAS:
+Escribe UN resumen ejecutivo de 1-2 oraciones en español con el hallazgo principal.
+Solo texto, sin tablas ni listas."""
 
-1. USA SOLO LOS DATOS PROPORCIONADOS - No inventes valores
-2. CADA FILA EN UNA LÍNEA SEPARADA (obligation absoluta)
-3. FORMATO EXACTO DE TABLA:
-   | Nombre | Valor |
-   |--------|-------|
-   | [Item] | [número] |
-4. NÚMEROS: Escribe los números SIN formato (123456789, NO 123.456.789)
-5. NUNCA combines múltiples filas en una línea
-6. NUNCA pongas el separador (|---|) en la misma línea que el encabezado
-7. SOLO una línea de separación entre encabezado y datos
+        try:
+            llm_summary = await self.llm.generate(
+                prompt=summary_prompt,
+                system_prompt=None,
+                temperature=0.3,
+                max_tokens=150
+            )
+            llm_summary = llm_summary.strip() if llm_summary else ""
+        except Exception:
+            llm_summary = ""
 
-FORMATO DE RESPUESTA:
+        # Combinar: resumen LLM + tabla generada en Python
+        if llm_summary:
+            explanation = f"**Resumen**: {llm_summary}\n\n{markdown_table}"
+        else:
+            explanation = markdown_table
 
-**Resumen**: [1-2 oraciones con hallazgo principal]
-
-| [Columna1] | [Columna2] |
-|------------|------------|
-| [Dato1] | [Valor1] |
-| [Dato2] | [Valor2] |
-
-**Análisis**:
-- [Punto clave 1]
-- [Punto clave 2]
-
-**Recomendación**: [Acción concreta]
-
-EJEMPLO CONCRETO:
-Si los datos son: [{{"name": "Carboneras", "total_consumption_m3": 99447958}}]
-
-COPIAR ESTE FORMATO EXACTO:
-**Resumen**: Sistema Carboneras lidera con 99.447.958 m³ de consumo.
-
-| Sistema | Consumo |
-|---------|---------|
-| Carboneras | 99447958 |
-
-RECUERDA: Cada fila de datos en UNA LÍNEA SEPARADA. Sin excepciones."""
-        
-        explanation = await self.llm.generate(
-            prompt=summary_prompt,
-            system_prompt=SYSTEM_PROMPT,
-            temperature=0.3,
-            max_tokens=600
-        )
-        
-        logger.info(f"[QUERY_NL] Respuesta LLM contiene tabla: {'|' in explanation}")
-        if '|' in explanation:
-            logger.debug(f"[QUERY_NL] Tabla detectada en respuesta")
+        logger.info(f"[QUERY_NL] Tabla generada en Python: {len(limited_data)} filas")
         
         # Analizar datos para determinar el mejor formato de gráfico
         chart_context = self._analyze_data_for_charts(result_data, question)

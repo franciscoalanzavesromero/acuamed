@@ -11,10 +11,10 @@ export interface ParsedChartData {
 }
 
 const CHART_INDICATORS: Record<ChartType, string[]> = {
-  line: ['tendencia', 'evolución', 'crecimiento', 'temporal', 'tiempo', 'series'],
-  bar: ['comparar', 'comparativa', 'ranking', 'top', 'distribución', 'meses', 'anual', 'consumo', 'agua', 'sistema', 'concej'],
-  pie: ['porcentaje', 'distribución', 'proporción', 'parte', 'segmento'],
-  area: ['acumulación', 'acumulado', 'volumen total', 'cumulative'],
+  line: ['tendencia', 'evolución', 'crecimiento', 'temporal', 'tiempo', 'series', 'mensual', 'anual', 'histórico', 'periodo', 'año', 'mes'],
+  bar: ['comparar', 'comparativa', 'ranking', 'top', 'sistema', 'concej'],
+  pie: ['porcentaje', 'proporción', 'parte', 'segmento', 'radial', 'región', 'regiones', 'reparto'],
+  area: ['acumulación', 'acumulado', 'volumen total', 'cumulative', 'total acumulado'],
   composed: ['múltiple', 'combinado', 'varios', 'comparar con'],
   table: ['detalle', 'lista', 'registro', 'tabla', 'completo'],
   scatter: ['dispersión', 'correlación', 'relación', 'scatter', 'disperse'],
@@ -26,9 +26,10 @@ const DATA_PATTERN = /(\d+[.,]\d+|\d+)/g
 export const parseChartFromText = (content: string, context?: any): ParsedChartData | null => {
   const lowerContent = content.toLowerCase()
   
-  let detectedType: ChartType = 'bar'
+  // Priorizar el tipo que sugiere el backend
+  let detectedType: ChartType = (context?.type as ChartType) || 'bar'
   let maxScore = 0
-  
+
   for (const [type, keywords] of Object.entries(CHART_INDICATORS)) {
     const score = keywords.filter(kw => lowerContent.includes(kw)).length
     if (score > maxScore) {
@@ -36,8 +37,9 @@ export const parseChartFromText = (content: string, context?: any): ParsedChartD
       detectedType = type as ChartType
     }
   }
-  
-  if (maxScore === 0 && context?.type) {
+
+  // Si hay empate o poca confianza, respetar la sugerencia del backend
+  if (maxScore <= 1 && context?.type) {
     detectedType = context.type
   }
   

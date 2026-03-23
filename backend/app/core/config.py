@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
     lm_studio_url: str
+    llm_model: str = "sqlcoder-7b-2"
 
     class Config:
         env_file = ".env"

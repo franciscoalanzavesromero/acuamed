@@ -287,7 +287,7 @@ export default function ChatPanel({ onAddChartToDashboard }: ChatPanelProps) {
               <div className="flex-grow-1">
                 {msg.content || msg.chartConfig ? (
                   <>
-                    {msg.content && (
+                    {msg.content && !msg.chartConfig && (
                       <ReactMarkdown
                         components={{
                           code({ node, className, children, ...props }: any) {
